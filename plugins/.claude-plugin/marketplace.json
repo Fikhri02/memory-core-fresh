@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "violet-local",
+  "description": "Local skills marketplace for the memory-core AI companion",
+  "owner": {
+    "name": "You",
+    "email": ""
+  },
+  "plugins": [
+    {
+      "name": "violet-skills",
+      "description": "Auto-triggered skills for the memory-core AI companion",
+      "category": "productivity",
+      "source": "./violet-skills"
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+# project-management/_template/structure.yaml
+# Defines the folder and file scaffold for every new project.
+# document-project reads this file when creating a new project-management/{name}/ folder
+# (both 'new project [name]' and 'document project [name]' route there).
+#
+# Features and Hotfixes are organised by component:
+#   Features/{Component}/Development/
+#   Features/{Component}/Completed/
+#   Features/{Component}/Archived/
+#   Hotfix/{Component}/Development/
+#   Hotfix/{Component}/Completed/
+#   Hotfix/{Component}/Archived/
+#
+# Component subfolders are NOT pre-created here — they are created dynamically
+# when a new component is added to Components.md or when a feature is first
+# created under a component.
+#
+# Each component folder gets an Overview.md on creation:
+#   Features/{Component}/Overview.md  (template: overview.md)
+# This file holds component-level workflow, backlog, improvements, and notes.
+# It is loaded by continue-project when a component is selected (token-efficient —
+# only the active component's context is loaded, not all components).
+
+folders:
+  - Plans
+  - Feedbacks
+
+files:
+  - name: General.md
+    template: general.md
+  - name: Timeline.md
+    template: timeline.md
+  - name: Components.md
+    template: components.md
+  - name: Design.md
+    template: design.md

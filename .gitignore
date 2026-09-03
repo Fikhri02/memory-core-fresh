@@ -1,0 +1,14 @@
+# Basic gitignore
+/[Tt]emp/
+*.exe
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Claude Code settings
+#   settings.json holds this machine's absolute marketplace path, written by setup.py.
+#   It is machine-specific and must not be shared.
+.claude/settings.json
+.claude/settings.local.json
