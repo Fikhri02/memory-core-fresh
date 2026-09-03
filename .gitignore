@@ -6,6 +6,8 @@
 # Python
 __pycache__/
 *.py[cod]
+.venv/
+venv/
 
 # Claude Code settings
 #   settings.json holds this machine's absolute marketplace path, written by setup.py.
