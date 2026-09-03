@@ -134,6 +134,43 @@ See `context/README.md` for the full convention.
 
 ---
 
+## Ecosystems and Portable Knowledge
+
+`ecosystem/` groups projects that belong together and records which domains span several of them.
+Each ecosystem is a folder: `map.md` is the map, `features/*.md` are the cross-repo notes. A note is
+the expensive artifact — it is the product of reading every member repo — and it is what
+`continue-project` draws on to warn you that a change is almost never one-repo.
+
+That knowledge is also the thing most worth moving between machines. `package-ecosystem-feature`
+writes one feature into a single portable file:
+
+```
+migrations/out/{feature}@{ecosystem}.pkg.md
+```
+
+The package carries the note, the map entries that place it, and each member's
+`Features/{Component}/Overview.md`. It does **not** carry `Local Path`, `Timeline.md`, or anything
+under `main/` — the machine-bound and session-bound halves stay behind. `git_origin` travels in
+their place, so the receiving machine can recognise which repo it is being asked to locate.
+
+`unpackage-ecosystem-feature` reads it on the other side. It creates the ecosystem if that machine
+has never seen it, asks where each member repo lives, and records the ones that are not there. It
+never creates a project entry — that stays `document-project`'s job.
+
+Imported regions carry a marker with a content hash:
+
+```markdown
+<!-- pkg:{feature}@{ecosystem} v2 sha:ab12cd34 -->
+- **{Feature}** — who drives it · who owns the data · who consumes it
+<!-- /pkg:{feature}@{ecosystem} -->
+```
+
+so a second import replaces exactly what it owns, leaves your own edits alone, and is a no-op when
+nothing changed. A region edited locally is never overwritten — it stops and asks — and
+`health_check` reports it as drift in the meantime.
+
+See `migrations/README.md` for the file shape and the full re-import table.
+
 ## Two Sources of Truth
 
 This trips people up, so it is worth stating plainly:
@@ -162,6 +199,11 @@ work                   →  subagent-driven-development, brainstorm, debugging
 all tasks checked      →  commit, then optionally move the feature to Completed/
 "save project"         →  the session's work is appended to Timeline.md
 "save"                 →  session context to memory; older recaps to the archive
+
+"document feature X across E"  →  one cross-repo note + an Overview per member
+"package feature X"            →  migrations/out/X@E.pkg.md, machine-bound paths stripped
+"import feature X"             →  on the other machine: ecosystem created if absent,
+                                  member repos located, only owned regions written
 ```
 
 Feature files carry **no status field**. A file in `Development/` is active; moving it to
