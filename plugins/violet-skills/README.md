@@ -19,6 +19,9 @@ Auto-triggered skills for the memory-core AI companion.
 | `pick-up-task` | "pick up task", "what's my task" | Finds the latest pending task assigned to an agent |
 | `sync-git` | "sync git", "update from git", after a merge/pull/new branch | Syncs commits into the feature Log and project Timeline, attributed per author; proposes task and completion updates |
 | `manage-ecosystem` | "new ecosystem", "add to ecosystem", "list ecosystems" | Maps which projects belong together, how they relate, and which domains span several — warns before cross-project features |
+| `document-ecosystem-feature` | "document feature [X] across [ecosystem]", "document shared domain" | Documents one feature across every ecosystem member — one cross-repo note plus a repo-scoped Overview per member |
+| `package-ecosystem-feature` | "package feature [X]", "export feature [X]" | Packages one documented feature into a single portable file under `migrations/out/`, machine-bound paths stripped |
+| `unpackage-ecosystem-feature` | "unpackage feature [X]", "import feature [X]" | Imports a packaged feature, creating the ecosystem if absent and asking where each member repo lives; never creates project entries |
 | `forge-skill` | "create skill", "level up", "self improve", auto-detect pattern (3+) | Proposes new skills and level-ups based on detected patterns (human-in-the-loop) |
 | *(time-aware)* | Session start (auto) | Built into main-memory — time-of-day adaptive greetings and behavior |
 

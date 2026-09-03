@@ -13,6 +13,7 @@ Dependency-free on purpose: the YAML scan is a line match, not a parse.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass, asdict
 from datetime import date
@@ -234,6 +235,96 @@ def ecosystem_feature_note_drift(root: Path) -> list[Finding]:
     return out
 
 
+# --- package markers -------------------------------------------------------
+# Imported feature knowledge carries provenance in the file that holds it, so a
+# region can be checked without consulting anything else. See
+# notes/ecosystem-feature-migrations-spec.md, Decision 2.
+
+PKG_OPEN = re.compile(r"^<!--\s*pkg:(\S+)\s+v(\d+)\s+sha:([0-9a-f]{8})\s*-->$", re.M)
+PKG_SOURCE_LINE = re.compile(r"^source:\s*\{([^}]*)\}\s*$", re.M)
+PKG_FIELD = re.compile(r"package:\s*([^,}\s]+)")
+SHA_FIELD = re.compile(r"sha:\s*([0-9a-f]{8})")
+FRONTMATTER_BLOCK = re.compile(r"\A---\n(.*?)\n---\n?", re.S)
+CODE_FENCE = re.compile(r"^```.*?^```", re.M | re.S)
+PKG_SCAN_SKIP = {".git", ".venv", "__pycache__", "node_modules", "migrations"}
+
+
+def region_sha(content: str) -> str:
+    """Hash of a region's content, insensitive to trailing whitespace and surrounding blank lines."""
+    normalised = "\n".join(line.rstrip() for line in content.strip().splitlines())
+    return hashlib.sha256(normalised.encode("utf-8")).hexdigest()[:8]
+
+
+def _scannable_markdown(root: Path):
+    for f in sorted(root.rglob("*.md")):
+        if PKG_SCAN_SKIP & set(f.relative_to(root).parts):
+            continue
+        # Fenced blocks document the marker format; those examples are not installs.
+        yield f, CODE_FENCE.sub("", f.read_text(encoding="utf-8"))
+
+
+def _owned_regions(text: str):
+    """Yield (package, recorded_sha, actual_content, closed) for every owned region."""
+    m = FRONTMATTER_BLOCK.match(text)
+    if m:
+        line = PKG_SOURCE_LINE.search(m.group(1))
+        if line:
+            pkg = PKG_FIELD.search(line.group(1))
+            sha = SHA_FIELD.search(line.group(1))
+            if pkg and sha:
+                yield pkg.group(1), sha.group(1), text[m.end():], True
+
+    for open_marker in PKG_OPEN.finditer(text):
+        package, _version, sha = open_marker.groups()
+        close = text.find(f"<!-- /pkg:{package} -->", open_marker.end())
+        if close == -1:
+            yield package, sha, "", False
+        else:
+            yield package, sha, text[open_marker.end():close], True
+
+
+def package_region_drift(root: Path) -> list[Finding]:
+    """Imported knowledge edited locally — the next import of that package will conflict."""
+    out: list[Finding] = []
+    for f, text in _scannable_markdown(root):
+        for package, recorded, content, closed in _owned_regions(text):
+            if not closed:
+                out.append(
+                    Finding("package_marker_unclosed", "medium", _rel(f, root),
+                            f"`{package}` region is opened but never closed")
+                )
+            elif region_sha(content) != recorded:
+                out.append(
+                    Finding("package_region_drift", "medium", _rel(f, root),
+                            f"`{package}` region was edited locally since import "
+                            f"(recorded sha:{recorded}, now sha:{region_sha(content)})")
+                )
+    return out
+
+
+def package_orphan_marker(root: Path) -> list[Finding]:
+    """A marker naming a package this machine has no record of applying."""
+    applied_dir = root / "migrations" / "applied"
+    if not applied_dir.is_dir():
+        return []          # nothing to judge against — a package may have been applied by hand
+
+    applied: set[str] = set()
+    for f in applied_dir.glob("*.md"):
+        applied.add(f.name.split(".pkg")[0])
+        found = PKG_FIELD.search(f.read_text(encoding="utf-8"))
+        if found:
+            applied.add(found.group(1))
+
+    out: list[Finding] = []
+    for f, text in _scannable_markdown(root):
+        for package in sorted({p for p, _s, _c, _cl in _owned_regions(text)} - applied):
+            out.append(
+                Finding("package_orphan_marker", "low", _rel(f, root),
+                        f"`{package}` region is installed, but no package by that name is in migrations/applied/")
+            )
+    return out
+
+
 def run_all(root: Path) -> dict:
     findings: list[Finding] = []
     for check in (
@@ -242,6 +333,8 @@ def run_all(root: Path) -> dict:
         skills_missing_from_spec,
         ecosystem_drift,
         ecosystem_feature_note_drift,
+        package_region_drift,
+        package_orphan_marker,
         complete_features_still_in_development,
         stale_timelines,
     ):

@@ -116,5 +116,106 @@ class FeatureNoteDrift(unittest.TestCase):
         self.assertEqual([], health.ecosystem_feature_note_drift(self.root))
 
 
+REGION = "- **DEP** \u2014 Admin drives \u00b7 Middleware owns the data"
+
+MARKED_MAP = """# Acme Ecosystem
+
+## Shared Domains
+
+- **Voucher** \u2014 local, untouched
+
+<!-- pkg:dep@acme v2 sha:{sha} -->
+{region}
+<!-- /pkg:dep@acme -->
+"""
+
+OWNED_NOTE = """---
+ecosystem: acme
+feature: dep
+source: {{package: dep@acme, version: 2, imported: 2026-09-03, sha: {sha}}}
+---
+{body}"""
+
+
+class PackageRegionDrift(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+        write(self.root, "migrations/applied/dep@acme.pkg.md", "---\npackage: dep@acme\n---\n")
+
+    def test_region_matching_its_hash_is_clean(self):
+        write(self.root, "ecosystem/acme/map.md",
+              MARKED_MAP.format(sha=health.region_sha(REGION), region=REGION))
+        self.assertEqual([], health.package_region_drift(self.root))
+
+    def test_locally_edited_region_is_reported(self):
+        write(self.root, "ecosystem/acme/map.md",
+              MARKED_MAP.format(sha=health.region_sha(REGION),
+                                region=REGION + " and calculates discounts"))
+        findings = health.package_region_drift(self.root)
+        self.assertEqual(1, len(findings))
+        self.assertEqual("package_region_drift", findings[0].check)
+        self.assertIn("dep@acme", findings[0].detail)
+
+    def test_whitespace_only_change_is_not_drift(self):
+        write(self.root, "ecosystem/acme/map.md",
+              MARKED_MAP.format(sha=health.region_sha(REGION), region=REGION + "   "))
+        self.assertEqual([], health.package_region_drift(self.root))
+
+    def test_marker_inside_a_code_fence_is_ignored(self):
+        # notes/ and README files document the marker format; those examples are not installs.
+        write(self.root, "notes/spec.md",
+              "# Spec\n\n```markdown\n" + MARKED_MAP.format(sha="deadbeef", region=REGION) + "```\n")
+        self.assertEqual([], health.package_region_drift(self.root))
+
+    def test_wholly_owned_note_reports_body_drift(self):
+        body = "\n# DEP \u2014 cross-ecosystem note\n\nThe domain spans three repos.\n"
+        write(self.root, "ecosystem/acme/features/dep.md",
+              OWNED_NOTE.format(sha=health.region_sha(body), body=body))
+        self.assertEqual([], health.package_region_drift(self.root))
+
+        write(self.root, "ecosystem/acme/features/dep.md",
+              OWNED_NOTE.format(sha=health.region_sha(body), body=body + "\nEdited locally.\n"))
+        findings = health.package_region_drift(self.root)
+        self.assertEqual(1, len(findings))
+        self.assertEqual("package_region_drift", findings[0].check)
+
+    def test_unclosed_marker_is_reported(self):
+        write(self.root, "ecosystem/acme/map.md",
+              "<!-- pkg:dep@acme v2 sha:deadbeef -->\n" + REGION + "\n")
+        findings = health.package_region_drift(self.root)
+        self.assertEqual(1, len(findings))
+        self.assertEqual("package_marker_unclosed", findings[0].check)
+
+    def test_sha_is_eight_lowercase_hex(self):
+        s = health.region_sha(REGION)
+        self.assertRegex(s, r"^[0-9a-f]{8}$")
+
+
+class PackageOrphanMarker(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+        write(self.root, "ecosystem/acme/map.md",
+              MARKED_MAP.format(sha=health.region_sha(REGION), region=REGION))
+
+    def test_marker_with_no_applied_record_is_orphan(self):
+        (self.root / "migrations" / "applied").mkdir(parents=True)
+        findings = health.package_orphan_marker(self.root)
+        self.assertEqual(1, len(findings))
+        self.assertEqual("package_orphan_marker", findings[0].check)
+        self.assertIn("dep@acme", findings[0].detail)
+
+    def test_marker_with_applied_record_is_clean(self):
+        write(self.root, "migrations/applied/dep@acme.pkg.md", "---\npackage: dep@acme\n---\n")
+        self.assertEqual([], health.package_orphan_marker(self.root))
+
+    def test_no_migrations_folder_is_not_an_error(self):
+        # Nothing to judge against: a package may have been applied by hand.
+        self.assertEqual([], health.package_orphan_marker(self.root))
+
+
 if __name__ == "__main__":
     unittest.main()

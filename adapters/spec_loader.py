@@ -180,7 +180,7 @@ def validate_spec(spec: VioletSpec, memory_root: Path) -> list[str]:
             if not (memory_root / mf.path).exists():
                 warnings.append(f"MISSING memory file: {mf.path}")
 
-    expected_skills = 15
+    expected_skills = 17
     if len(spec.skills) != expected_skills:
         warnings.append(f"Expected {expected_skills} skills, found {len(spec.skills)}")
 

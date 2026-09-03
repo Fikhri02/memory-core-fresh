@@ -25,7 +25,7 @@ Then open this folder in Claude Code and type your companion's name.
 
 ## What You Get
 
-### 12 skills
+### 17 skills
 
 | Skill | Trigger | What it does |
 |-------|---------|--------------|
@@ -40,6 +40,11 @@ Then open this folder in Claude Code and type your companion's name.
 | `analyze-component` | `"analyze workflow"` | Cross-repo critique of one workflow, severity on every finding |
 | `delegate-task` | `"delegate task"` | Writes a dated task file for another agent to pick up |
 | `pick-up-task` | `"pick up task"` | Finds the newest pending task for an assignee |
+| `sync-git` | `"sync git"`, after a merge/pull | Syncs commits into the feature Log and project Timeline, attributed per author |
+| `manage-ecosystem` | `"new ecosystem"`, `"list ecosystems"` | Maps which projects belong together and which domains span several of them |
+| `document-ecosystem-feature` | `"document feature [X] across [ecosystem]"` | Documents one feature across every member — one cross-repo note, one Overview per member |
+| `package-ecosystem-feature` | `"package feature [X]"`, `"export feature"` | Packages one documented feature into a portable file, machine-bound paths stripped |
+| `unpackage-ecosystem-feature` | `"unpackage feature [X]"`, `"import feature"` | Imports a packaged feature, creating the ecosystem if absent; never creates project entries |
 | `forge-skill` | `"create skill"`, `"level up"` | Proposes new skills from repeated patterns — you approve, it never self-writes |
 
 ### Platform support
@@ -64,7 +69,7 @@ memory-core/
   AGENTS.md                   Codex entry point (generated)
 
   adapters/                   spec -> platform prompt generators
-  plugins/violet-skills/      12 SKILL.md files — hand-written, canonical for Claude Code
+  plugins/violet-skills/      17 SKILL.md files — hand-written, canonical for Claude Code
   _templates/main/            placeholder memory files, rendered into main/ by setup
 
   context/                    always-on memory modules — the folder IS the registry
@@ -90,6 +95,7 @@ memory-core/
   brainstorming/              brainstorm sessions (active / archived / done)
   delegate-task/Timeline/     delegated task files by year/date
   notes/                      investigation and analysis notes
+  migrations/                 packaged ecosystem features in transit (out / in / applied)
   outputs/                    generated platform prompts
 ```
 
