@@ -1622,3 +1622,59 @@ skills:
     level_history:
       1: "Base: sourced profile with first-run scaffold and interview, tiered web job search with ad snapshots and fit analysis, profile-only CV tailoring, application tracker"
       2: "Company research, fit/role/company scoring with overall rating, band and reason, run JSON, Excel and HTML artifact report via build_report.py"
+
+  # ---------------------------------------------------------------------------
+  log-debugging:
+    description: >
+      Use when user says 'log debugging', 'log this debug', 'debug log',
+      'save debug log', or 'continue debug log [slug]'. Records a debugging
+      session — symptom, root cause, solution, dead ends, and the step-by-step
+      hunt — as a searchable file under debugging/ for future reference. Also
+      suggested, never applied, after a session that took several diagnostic
+      steps to reach a root cause.
+    tier: on_demand
+    level: 1
+    triggers:
+      explicit:
+        - "log debugging"
+        - "log this debug"
+        - "debug log"
+        - "save debug log"
+        - "continue debug log"
+        - "resolve debug log"
+        - "list debug logs"
+      passive: "debugging reached a root cause after 3+ diagnostic steps — suggest only, never write"
+    activation_message: "Logging the debug session..."
+    protocol:
+      - step: 1
+        action: derive
+        description: "Slug as {project}-{symptom in 3-4 words}; name for the symptom, not the cause"
+      - step: 2
+        action: check
+        target: debugging/
+        description: "Search open/ then resolved/ for the slug; resume instead of creating a duplicate"
+      - step: 3
+        action: resolve_project
+        description: >
+          Match cwd or git origin against the Repositories table in each
+          project-management/*/General.md. No match means Project is
+          '(not tracked)' — never scaffold a project entry from here.
+      - step: 4
+        action: write
+        target: debugging/open/{slug}.md
+        description: "Symptom (verbatim), root cause, solutions, dead ends, dated step-by-step log"
+      - step: 5
+        action: symlink
+        target: project-management/{project}/Debugging/{slug}.md
+        description: "Only when the project matched and the source file exists"
+        condition: if_project_matched
+      - step: 6
+        action: offer
+        description: "If the cause is known and fixed, offer the move to resolved/ — ask, never move"
+    output_rules:
+      - symptom_verbatim: true
+      - append_only: true
+      - preserve_dead_ends: true
+      - never_auto_resolve: true
+    level_history:
+      1: "Base: write, resume, and resolve a debug log; project matching by git origin; symptom-first slugs; append-only step log with preserved dead ends"
