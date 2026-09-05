@@ -1678,3 +1678,104 @@ skills:
       - never_auto_resolve: true
     level_history:
       1: "Base: write, resume, and resolve a debug log; project matching by git origin; symptom-first slugs; append-only step log with preserved dead ends"
+
+  # ---------------------------------------------------------------------------
+  architecture-review:
+    description: >
+      Use when user says 'architecture review', 'review architecture', 'study
+      architecture', 'document architecture', 'review tech stack', or 'assess
+      tech stack'. Studies a repository's architecture and stack from real file
+      evidence — inventories technologies, weighs the pros and cons of each in
+      context, and ranks improvements — then writes the result to
+      notes/architecture-review/{project}.md. Evidence before opinion: nothing
+      is named that cannot be tied to a file.
+    tier: on_demand
+    level: 1
+    triggers:
+      explicit:
+        - "architecture review"
+        - "review architecture"
+        - "study architecture"
+        - "document architecture"
+        - "review tech stack"
+        - "assess tech stack"
+        - "list architecture reviews"
+    activation_message: "Reviewing the architecture..."
+    independence: >
+      Does not touch project-management/. No project resolution, no Timeline
+      entry, no symlink. It reviews whatever repository is in front of it and
+      writes one file under notes/architecture-review/.
+    core_rule: >
+      Evidence before opinion. Never name a technology or make a claim that
+      cannot be tied to a file in the repository. Inventory first, analyse
+      second, write last.
+    protocol:
+      - step: 1
+        action: identify
+        description: >
+          Project name from a root manifest's name field (package.json,
+          pyproject.toml, Cargo.toml, composer.json, go.mod), else the git
+          origin repo name, else the directory basename. Git repo link from
+          git remote get-url origin, normalised to https; no remote means the
+          absolute local path. Also capture branch and short HEAD SHA. Slug =
+          name lowercased and hyphenated.
+      - step: 2
+        action: check
+        target: notes/architecture-review/{slug}.md
+        description: >
+          If it exists, ask before writing — overwrite, or preserve the current
+          one as {slug}-{YYYY-MM-DD}.md first. Never silently overwrite.
+      - step: 3
+        action: gather_evidence
+        description: >
+          Dependency manifests and lockfiles, runtime and infra configs, CI/CD,
+          the directory tree 2-3 levels with entry points, data layer schemas
+          and migrations, config and env examples, docs and ADRs. Tag every
+          technology [observed] (in a manifest or config) or [inferred] (from a
+          named code pattern).
+      - step: 4
+        action: identify_pattern
+        description: >
+          Name the architecture — monolith, modular monolith, microservices,
+          layered, hexagonal, event-driven, serverless, MVC — with the files and
+          structure that indicate it. 'Mixed' and 'unclear' are valid answers.
+      - step: 5
+        action: analyse
+        description: >
+          Advantages AND disadvantages per major choice, grounded in this
+          project's usage rather than textbook feature lists. Improvements
+          ranked by impact against effort.
+      - step: 6
+        action: write
+        target: notes/architecture-review/{slug}.md
+        description: >
+          Header carries Project, Git repo link, branch @ commit, and date.
+          Sections: executive summary, architecture pattern (diagram only when
+          boundaries are genuinely visible), tech stack inventory table,
+          advantages and disadvantages, ranked improvements table, open
+          questions and not examined.
+      - step: 7
+        action: verify
+        description: >
+          Cross-check every technology against a real file and cut what cannot
+          be proven; confirm every major choice has both a pro and a con;
+          confirm improvements are ranked; confirm scope is stated.
+      - step: 8
+        action: report
+        description: "Path written, tech count, top three recommendations"
+    output_rules:
+      - evidence_required: true
+      - observed_or_inferred_tagging: true
+      - balance_required: true
+      - improvements_ranked: true
+      - scope_stated: true
+      - read_only_on_repo: true
+      - never_overwrite_unasked: true
+      - never_touches_project_management: true
+    scope_handling:
+      monorepo: "Stack rows per package or service; shared tooling noted once; sampled packages listed"
+      large_repo: "Prioritise entry points, shared libraries and manifests; state sampled versus skipped"
+      sparse_repo: "Fall back to code patterns and imports, tag [inferred], lower stated confidence"
+      polyglot: "One table, layer rows grouped by language; name the runtime boundary in the pattern section"
+    level_history:
+      1: "Base: evidence-first inventory with observed/inferred tagging, pattern identification, balanced per-choice analysis, impact x effort ranked improvements, verify pass; writes notes/architecture-review/{project}.md with project name and git URL; independent of project-management/"
