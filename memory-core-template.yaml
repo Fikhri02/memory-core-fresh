@@ -1779,3 +1779,250 @@ skills:
       polyglot: "One table, layer rows grouped by language; name the runtime boundary in the pattern section"
     level_history:
       1: "Base: evidence-first inventory with observed/inferred tagging, pattern identification, balanced per-choice analysis, impact x effort ranked improvements, verify pass; writes notes/architecture-review/{project}.md with project name and git URL; independent of project-management/"
+
+  # ---------------------------------------------------------------------------
+  brain:
+    description: >
+      Use when user says 'brain on [topic]', 'open brain [topic]', 'think
+      through [topic]', 'discuss [topic] theoretically', 'continue brain
+      [topic]', 'save brain', 'mark brain [topic] settled', or 'park brain
+      [topic]'. Captures theoretical discussion — architecture, frameworks,
+      databases, UI/UX — as accumulating topic files under brain/. Builds
+      nothing: never writes code, scaffolds a project, or creates a plan.
+    tier: on_demand
+    level: 1
+    triggers:
+      explicit:
+        - "brain on"
+        - "save brain"
+        - "continue brain"
+        - "open brain"
+        - "think through"
+        - "discuss theoretically"
+        - "mark brain settled"
+        - "park brain"
+      passive: null
+    activation_message: "_(brain activates)_"
+    folder_root: "brain/"
+    file_format: "{domain}/{topic}.md"
+    commands:
+      brain-start:
+        triggers: ["brain on", "open brain", "think through", "discuss theoretically"]
+        protocol:
+          - step: 1
+            action: search
+            target: "brain/"
+            description: >
+              Slugify the topic and search brain/**/. Exactly one match hands to
+              brain-resume. Two or more domains holding the same slug stops the
+              skill: list every path and ask which is meant, never pick one
+          - step: 2
+            action: resolve_domain
+            target: "brain/"
+            description: >
+              List existing domain folders and propose an existing one before
+              inventing, matching case-insensitively and across singular/plural.
+              A new domain requires an explicit yes
+          - step: 3
+            action: discuss
+            description: >
+              Discuss without writing. The file is created on save, never on
+              start, so an abandoned discussion leaves nothing behind
+      brain-save:
+        triggers: ["save brain"]
+        protocol:
+          - step: 1
+            action: review
+            description: >
+              Identify every topic the session touched; a session that was half
+              implementation captures only the theory threads and names which it
+              ignored
+          - step: 2
+            action: check
+            description: >
+              If nothing theoretical was discussed, write nothing, say so, stop
+          - step: 3
+            action: write
+            target: "brain/README.md"
+            description: >
+              Create brain/ and its README from the canonical convention doc if
+              the store does not exist yet
+          - step: 4
+            action: plan_writes
+            description: >
+              Resolve the domain for every topic discovered in step 1 that was
+              not already resolved this session, then present the write plan —
+              each path new or existing with last-touched date, any newly
+              invented domain named — and wait for confirmation
+          - step: 5
+            action: write
+            target: "brain/{domain}/{topic}.md"
+            description: >
+              Append one dated Log entry per topic, scoped to only that thread.
+              If a section for today already exists, extend it rather than
+              opening a duplicate
+          - step: 6
+            action: write
+            description: >
+              Rewrite Current Thinking only if the position actually moved
+          - step: 7
+            action: write
+            description: "Update Open Questions — add what surfaced, check off what resolved"
+          - step: 8
+            action: offer
+            skill: "brainstorm"
+            description: >
+              If the discussion turned actionable, write Implications and offer a
+              brainstorm handoff once per topic. On yes, invoke the brainstorm
+              skill and let it author the file — brain never writes into
+              brainstorming/ itself
+          - step: 9
+            action: offer
+            target: "project-management/{project}/Timeline.md"
+            description: >
+              Project set and documented: offer one Timeline line, never
+              automatic. Project set but not documented: keep the field, skip the
+              offer, and say why
+          - step: 10
+            action: write
+            description: "Cross-link the topics touched this session into each other's Related"
+      brain-resume:
+        triggers: ["continue brain"]
+        protocol:
+          - step: 1
+            action: search
+            target: "brain/{domain}/{topic}.md"
+            description: >
+              Locate the topic. No file: offer to start it, never create silently.
+              Two or more domains holding the slug: list every path and ask before
+              recapping anything
+          - step: 2
+            action: recap
+            description: "Two lines — the current position, and the question left open"
+          - step: 3
+            action: discuss
+            description: "Continue. Writes still happen only on 'save brain'"
+      status-transition:
+        triggers: ["mark brain settled", "park brain"]
+        protocol:
+          - step: 1
+            action: write
+            target: "brain/{domain}/{topic}.md"
+            description: "'mark brain settled' sets Status: settled"
+          - step: 2
+            action: write
+            target: "brain/{domain}/{topic}.md"
+            description: >
+              'park brain' asks for a reason, sets Status: parked, and appends
+              Parked Reason to the header block
+          - step: 3
+            action: check
+            description: >
+              Nothing moves on the filesystem — the folder carries the domain,
+              not the status
+    rules:
+      - "Builds nothing — never writes code, scaffolds a project, or creates a brainstorm or plan on its own initiative"
+      - "A slug held by two domains stops the writer — list both paths and ask, never pick one"
+      - "Never invents a domain folder without an explicit yes; propose an existing one first"
+      - "Log entries append — a prior dated entry is never rewritten or deleted"
+      - "Current Thinking is the only rewritable prose region; header fields and Open Questions checkboxes are maintained in place"
+      - "Files are created on save, never on start"
+      - "Never writes into project-management/ beyond the single offered Timeline line"
+      - "The log's fourth field is 'Still open' — a question, never a task or a next step"
+    output_rules:
+      - append_only_log: true
+      - current_thinking_is_sole_rewritable_prose: true
+      - builds_nothing: true
+      - create_on_save_not_on_start: true
+    level_history:
+      1: "Base: topic files in free-form domain folders, passive capture flushed on save, multi-topic split with a confirmed write plan and per-topic domain resolution, offered project Timeline line, single-offer brainstorm handoff delegated to the brainstorm skill"
+
+  # ---------------------------------------------------------------------------
+  brain-recall:
+    description: >
+      Use when user says 'what do I think about [topic]', 'recall brain
+      [topic]', 'list brain', 'search brain [term]', 'what have I thought
+      about for [project]', or 'stale brain'. Reads the theoretical topic
+      files under brain/ — lookup, browse, search, project view, and health.
+      Strictly read-only: never writes a file.
+    tier: on_demand
+    level: 1
+    triggers:
+      explicit:
+        - "what do I think about"
+        - "list brain"
+        - "search brain"
+        - "stale brain"
+        - "recall brain"
+        - "what have I thought about for"
+      passive: null
+    activation_message: "_(brain-recall activates)_"
+    folder_root: "brain/"
+    commands:
+      lookup:
+        triggers: ["what do I think about", "recall brain"]
+        protocol:
+          - step: 1
+            action: search
+            target: "brain/{domain}/{topic}.md"
+            description: >
+              Slugify and find the topic. A slug held by two domains is reported
+              as an ambiguity with both paths, never resolved by guessing. No
+              match: say so and offer the three closest slugs
+          - step: 2
+            action: report
+            description: >
+              Return Current Thinking, the unchecked Open Questions, and the date
+              of the most recent Log entry — not the whole file
+      browse:
+        triggers: ["list brain"]
+        protocol:
+          - step: 1
+            action: report
+            target: "brain/"
+            description: >
+              Walk brain/{domain}/ one level deep, group by domain
+              alphabetically, topics newest-touched first, each with status and
+              latest Log date
+      search:
+        triggers: ["search brain"]
+        protocol:
+          - step: 1
+            action: report
+            target: "brain/"
+            description: >
+              Case-insensitive search ranked by section — Current Thinking >
+              Open Questions > Implications > Log — not by match count. Print the
+              path, the section the hit landed in, and the matching line
+      project-view:
+        triggers: ["what have I thought about for"]
+        protocol:
+          - step: 1
+            action: report
+            description: >
+              Filter topics on the Project field, print each with its Current
+              Thinking line, and state whether that project has a
+              project-management entry
+      health:
+        triggers: ["stale brain"]
+        protocol:
+          - step: 1
+            action: report
+            target: "brain/"
+            description: >
+              Report evolving topics untouched 90+ days, unresolved [[links]] as
+              opportunities rather than errors, and slugs colliding across
+              domains — then fix nothing
+    rules:
+      - "Never writes a file — not a brain topic, not a project file, not a note; report and suggest, never repair"
+      - "Never creates brain/ — if the store is absent, say so and stop; creating it is the brain skill's job"
+      - "Ambiguous slugs are reported with both paths, never resolved by guessing"
+      - "Unresolved [[links]] are opportunities, not errors"
+      - "lookup returns the position, not the whole file"
+      - "'recall [topic]' without the word brain is not this skill's trigger"
+    output_rules:
+      - never_writes: true
+      - never_creates_the_store: true
+      - ambiguity_reported_not_resolved: true
+    level_history:
+      1: "Base: lookup, browse, section-ranked search, project view, and health across staleness, unresolved links, and cross-domain slug collisions"
