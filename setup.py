@@ -229,30 +229,58 @@ def step_register_mcp(root: Path) -> None:
         print(f"            {server} --root={root}")
         return
 
-    result = subprocess.run(
-        ["claude", "mcp", "add", "--scope", "user", "memory-core-context", "--",
-         sys.executable, str(server), f"--root={root}"],
-        capture_output=True, text=True,
-    )
-    if result.returncode == 0:
+    try:
+        result = subprocess.run(
+            ["claude", "mcp", "add", "--scope", "user", "memory-core-context", "--",
+             sys.executable, str(server), f"--root={root}"],
+            capture_output=True, text=True,
+        )
+    except FileNotFoundError:
+        print("  [5/6] Registering MCP server...              skipped (claude CLI not found)")
+        return
+    if result.returncode == 0 or _already_done(result):
         print("  [5/6] Registering MCP server...              done")
     else:
-        print("  [5/6] Registering MCP server...              skipped (claude CLI not found)")
+        print("  [5/6] Registering MCP server...              FAILED")
+        print(f"          {(result.stderr or result.stdout).strip()}")
+
+
+PLUGIN_ID = "violet-skills@violet-local"
+
+
+def _print_manual_install(root: Path) -> None:
+    print()
+    print("  To install manually, run:")
+    print(f"    claude plugin marketplace add {root / 'plugins'}")
+    print(f"    claude plugin install {PLUGIN_ID}")
+
+
+def _already_done(result: subprocess.CompletedProcess) -> bool:
+    """The CLI exits non-zero when the marketplace or plugin is already there.
+    Re-running setup must not report that as a failure."""
+    return "already" in f"{result.stdout}\n{result.stderr}".lower()
 
 
 def step_install_plugin(root: Path) -> None:
+    """Register the plugins/ folder as a marketplace, then install violet-skills from it."""
     print("  [6/6] Installing Claude Code plugin...", end="", flush=True)
-    result = subprocess.run(
-        ["claude", "plugin", "add", "--local", str(root / "plugins" / "violet-skills")],
-        capture_output=True, text=True
-    )
-    if result.returncode == 0:
-        print("      done")
-    else:
-        print("      skipped (claude CLI not found)")
-        print()
-        print("  To install manually, run:")
-        print(f"    claude plugin add --local {root / 'plugins' / 'violet-skills'}")
+    commands = [
+        ["claude", "plugin", "marketplace", "add", str(root / "plugins")],
+        ["claude", "plugin", "install", PLUGIN_ID],
+    ]
+    for command in commands:
+        try:
+            result = subprocess.run(command, capture_output=True, text=True)
+        except FileNotFoundError:
+            print("      skipped (claude CLI not found)")
+            _print_manual_install(root)
+            return
+        if result.returncode != 0 and not _already_done(result):
+            print("      FAILED")
+            print(f"          {(result.stderr or result.stdout).strip()}")
+            _print_manual_install(root)
+            return
+    print("      done")
 
 
 # =============================================================================
@@ -280,7 +308,6 @@ def print_summary(tokens: dict[str, str]) -> None:
     print("  Any LLM:      Use outputs/generic-prompt.md as your system prompt")
     print()
     print("  Full guide:   USER-GUIDE.md")
-    print("  Customizing:  CUSTOMIZE.md")
     print()
 
 

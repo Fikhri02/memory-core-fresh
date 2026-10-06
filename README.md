@@ -25,7 +25,7 @@ Then open this folder in Claude Code and type your companion's name.
 
 ## What You Get
 
-### 17 skills
+### 21 skills
 
 | Skill | Trigger | What it does |
 |-------|---------|--------------|
@@ -45,6 +45,10 @@ Then open this folder in Claude Code and type your companion's name.
 | `document-ecosystem-feature` | `"document feature [X] across [ecosystem]"` | Documents one feature across every member — one cross-repo note, one Overview per member |
 | `package-ecosystem-feature` | `"package feature [X]"`, `"export feature"` | Packages one documented feature into a portable file, machine-bound paths stripped |
 | `unpackage-ecosystem-feature` | `"unpackage feature [X]"`, `"import feature"` | Imports a packaged feature, creating the ecosystem if absent; never creates project entries |
+| `start-learning` | `"start learning [topic]"` | Creates a learning topic: goal, a drafted or course-mirrored study plan, a concept table |
+| `continue-learning` | `"continue learning [topic]"` | Quizzes shaky concepts first, then the next objective or an exercise |
+| `save-learning` | `"save learning"` | Ticks confirmed objectives, writes concept notes, appends the study log |
+| `career` | `"career profile"`, `"find jobs"`, `"tailor cv for [job]"`, `"save career"` | Sourced profile, scored job search, profile-only CV tailoring, application tracker and timeline |
 | `forge-skill` | `"create skill"`, `"level up"` | Proposes new skills from repeated patterns — you approve, it never self-writes |
 
 ### Platform support
@@ -69,7 +73,7 @@ memory-core/
   AGENTS.md                   Codex entry point (generated)
 
   adapters/                   spec -> platform prompt generators
-  plugins/violet-skills/      17 SKILL.md files — hand-written, canonical for Claude Code
+  plugins/violet-skills/      21 SKILL.md files — hand-written, canonical for Claude Code
   _templates/main/            placeholder memory files, rendered into main/ by setup
 
   context/                    always-on memory modules — the folder IS the registry
@@ -95,6 +99,8 @@ memory-core/
   brainstorming/              brainstorm sessions (active / archived / done)
   delegate-task/Timeline/     delegated task files by year/date
   notes/                      investigation and analysis notes
+  learning/                   study topics: plan, concept notes, progress, exercises
+  career/                     profile, job files, tracker, search runs, timeline
   migrations/                 packaged ecosystem features in transit (out / in / applied)
   outputs/                    generated platform prompts
 ```

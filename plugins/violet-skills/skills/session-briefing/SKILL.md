@@ -62,7 +62,27 @@ When this skill activates, output:
       Now that intent is known, resolve the deferred modules: call `context_load` again with
       `session_type` set (`design` / `code` / `general`), or read the matching bodies by hand on
       the fallback path. Report anything that newly loaded
-- [ ] **Step 4**: Compose and deliver relevance-filtered brief (max 12 lines)
+- [ ] **Step 4**: Compose and deliver relevance-filtered brief (max 12 lines).
+      **Learning flags:** for each `learning/*/General.md` with `**Status**: active` (skip folders
+      starting with `_`), read the concept table in its `Progress.md`. If any concept is `shaky`
+      with `Last reviewed` 7 or more days ago, add one line:
+      `📚 {topic} — {n} shaky concept(s), oldest reviewed {d} days ago`.
+      These share the brief's limit of 3 flags with idle-project flags, most overdue first. Skip
+      silently when `learning/` does not exist
+
+      **Career flag:** when `career/` exists, read `career/tracker.md` and the **most recent**
+      `## YYYY-MM-DD` entry in `career/timeline.md`. Emit at most one line:
+      `💼 Career — {n} ready · {n} awaiting reply · {company} follow-up due {date} · {n} open questions`.
+      **Fire it only when something is time-sensitive or unresolved** — a `Next action` date that
+      has been reached or passed, or one or more `Open:` bullets in that latest entry. A standing
+      count of jobs at `ready` never fires it alone; counts are context once the line is earned.
+      Omit any clause whose count is zero. `Open:` bullets in older entries are already resolved
+      and are not read. This shares the brief's limit of 3 flags with idle-project and learning
+      flags. Skip the whole line silently when `career/` does not exist. When `career/timeline.md`
+      **is missing or has no entries**, do not read it;
+      **that suppresses only the open-questions clause** — a due follow-up lives in `tracker.md`
+      and must still fire the line,
+      or a fresh install that never ran `save career` would go silent on the date it matters
 
 ## Rules
 
@@ -83,4 +103,7 @@ When this skill activates, output:
 
 ## Level History
 
-- **Lv.3** — Current behaviour, as described in the Protocol and Rules above
+- **Lv.3** — Context load, recap, time-of-day tone, intent-filtered brief
+- **Lv.4** — Adds learning flags for active topics whose shaky concepts have gone 7+ days without review
+- **Lv.5** — Current behaviour: adds a career flag for job-search state, fired only by a due
+  follow-up or an unresolved `Open:` question, never by a standing count of ready applications

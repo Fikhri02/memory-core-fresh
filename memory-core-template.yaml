@@ -66,6 +66,7 @@ memory_root:
     - delegate-task/
     - notes/
     - outputs/
+    - career/
 
 # =============================================================================
 # MEMORY FILES
@@ -201,7 +202,7 @@ skills:
       'brief', 'session brief', 'what did we do last time', or 'where did we
       left off'. Suppressed when user says 'skip brief'.
     tier: always_active
-    level: 3
+    level: 4
     triggers:
       explicit: ["brief", "session brief", "what did we do last time", "where did we leave off", "reload context"]
       passive: session_start
@@ -234,14 +235,19 @@ skills:
           conditional context modules whose load rule is satisfied and report them
       - step: 4
         action: deliver_brief
-        description: Compose and deliver relevance-filtered brief (max 12 lines)
+        description: >
+          Compose and deliver relevance-filtered brief (max 12 lines). Learning flags: for each
+          active learning/ topic with a shaky concept unreviewed for 7+ days, add
+          '📚 {topic} — {n} shaky concept(s), oldest reviewed {d} days ago', sharing the 3-flag cap
+          with idle projects, most overdue first
     output_rules:
       - max_lines: 12
       - max_flags: 3
       - skip_empty_sections: true
       - deliver_before_request: true
     level_history:
-      3: "Current behaviour, as described in the protocol and rules above"
+      3: "Context load, recap, time-of-day tone, intent-filtered brief"
+      4: "Current behaviour: learning flags for active topics whose shaky concepts have gone 7+ days without review"
 
   # ---------------------------------------------------------------------------
   save-memory:
@@ -250,7 +256,7 @@ skills:
       'update memory', or when important information needs to be preserved
       to memory files.
     tier: always_active
-    level: 1
+    level: 3
     triggers:
       explicit: ["save", "save memory", "save progress", "update memory"]
       passive: null
@@ -275,7 +281,10 @@ skills:
       - "Only update main-memory.md when genuine new knowledge about {{USER_NAME}} or {{COMPANION_NAME}} has emerged"
       - "current-session.md always updated on save"
       - "current-session.md is RAM, not a log — at most 3 prior session blocks; older blocks move to main/session-archive.md unchanged"
-      - "Bare 'save' belongs to this skill — it never writes project files, it suggests 'save project'"
+      - "Bare 'save' belongs to this skill — it never writes project or learning files; it suggests 'save project' or 'save learning'"
+    level_history:
+      2: "Session RAM with a 3-session cap and verbatim archive; suggests save project"
+      3: "Current behaviour: also suggests save learning after a study session"
 
   # ---------------------------------------------------------------------------
   manage-project:
@@ -827,9 +836,10 @@ skills:
       Auto-suggest after any session where project-related work was done —
       feature implementation, project-management file changes, commits,
       component/design updates, or an investigation. Appends the session record
-      to the active project's Timeline.md.
+      to the active project's Timeline.md, and routes durable findings into the
+      Feature Overviews and ecosystem notes where they will be read again.
     tier: always_active
-    level: 3
+    level: 5
     triggers:
       explicit: ["save project", "save project management"]
       passive: on_project_work_detected
@@ -850,22 +860,58 @@ skills:
         action: parse
         description: >
           Summarise the session into flat verb-first bullets (max 10) covering project
-          management changes, code changes, and investigation findings with the notes/ file
+          management changes, code changes, and investigation findings with the notes/ file.
+          Then classify each bullet: log (the act itself — commits, hashes, what was run,
+          what was decided) stays timeline-only; durable state (a fact still true after the
+          session closes — a constraint, trap, behaviour, capability, key file, environment
+          gotcha) also goes to step 5
       - step: 5
         action: write
-        target: "project-management/{name}/Timeline.md"
-        description: "Append to today's ## YYYY-MM-DD section if it exists, else add a new one at the top"
+        target: "project-management/{name}/Features/{Feature}/Overview.md"
+        description: >
+          File every durable bullet where it will be read again, then report it. Feature
+          behaviour, constraints and traps go to the Overview's Constraints; a file that
+          matters goes to its Key files table; a real new sub-capability gets its own
+          section. Divergence between ecosystem members goes to
+          ecosystem/{slug}/features/{feature}.md; anything changing how members relate goes
+          to ecosystem/{slug}/map.md Cross-Project Rules; project-wide facts go to
+          General.md or Components.md. Additive only — never rewrite or delete existing
+          content. Also scan the previous two timeline entries for feature work that never
+          reached an Overview, and offer to backfill
+      - step: "5a"
+        action: write
+        target: "learning/{topic}/Notes/{concept}.md"
+        description: >
+          If a learning/*/Projects.md links this project, ask once whether any durable bullets
+          should become topic notes; write only the picked ones (additive). A planned concept
+          at — moves to shaky with today's date; a new concept gets a row at shaky. Rated rows
+          are never changed. Never copy automatically
       - step: 6
+        action: write
+        target: "project-management/{name}/Timeline.md"
+        description: >
+          Append to today's ## YYYY-MM-DD section if it exists, else add a new section
+          following the ordering the file already uses — end of file if its headers run
+          oldest-first, top if newest-first
+      - step: 7
         action: confirm
-        description: "Report: 'Saved {project-name} — timeline updated.'"
+        description: >
+          Report: 'Saved {project-name} — timeline updated, {N} file(s) updated', listing
+          every documentation file touched and what went into each
     rules:
       - "Only run if project work actually happened — no empty entries"
       - "Keep bullets brief: one line, verb-first, no sub-bullets"
       - "Append to today's section if it exists; never overwrite existing entries"
       - "Always ask which project if ambiguous — never assume"
       - "Bare 'save' belongs to save-memory, which suggests this skill instead of running it"
+      - "The timeline is the log, not the record — anything still true after the session closes belongs in the Overview too"
+      - "Documentation edits are additive; contradictions are surfaced to the user, never resolved silently"
+      - "Not everything is durable — an exploration with no ratified direction stays in notes/ and the timeline"
+      - "Never create a Features/ entry here — that is document-project's job"
     level_history:
-      3: "Current behaviour, as described in the protocol and rules above"
+      3: "Timeline only. Durable findings stayed in the dated log and never reached the feature documentation"
+      4: "Step 4 classifies log vs durable state, step 5 files the durable half into the Overviews, ecosystem notes and map, and step 6 stopped forcing newest-first timeline ordering"
+      5: "Current behaviour: step 5a offers durable findings to learning topics that link this project, writing only the picked ones"
 
   # ---------------------------------------------------------------------------
   analyze-component:
@@ -1312,3 +1358,267 @@ skills:
       - "Never mark work Completed — status is the user's call"
     level_history:
       1: "Base: single-feature import with ecosystem creation, interactive member location, and hash-guarded re-import"
+
+  # ---------------------------------------------------------------------------
+  start-learning:
+    description: >
+      Use when user says 'start learning [topic]' or 'new learning topic [topic]'.
+      Creates a learning topic under learning/ with a drafted or course-mirrored study plan,
+      a concept table for confidence tracking, and links to projects that exercise it.
+    tier: on_demand
+    level: 1
+    triggers:
+      explicit: ["start learning", "new learning topic"]
+      passive: null
+    activation_message: "_(start-learning activates)_"
+    protocol:
+      - step: 1
+        action: resolve
+        target: "learning/{slug}/"
+        description: "Slugify the topic; if it exists, offer continue learning — never overwrite"
+      - step: 2
+        action: ask
+        description: "Goal, why, current level and target level — one question per message"
+      - step: 3
+        action: ask
+        description: >
+          Source: drafted (research, 4–8 modules with ability-phrased objectives and concepts,
+          every source cited with URL and date) or course (modules mirror the named material;
+          invent nothing beyond it)
+      - step: 4
+        action: confirm
+        description: "Present the full draft and wait — nothing is written before the yes"
+      - step: 5
+        action: write
+        target: "learning/_template/structure.yaml"
+        description: "Scaffold every folder and file the template lists; every concept starts at — in Progress.md"
+      - step: 6
+        action: write
+        target: "learning/{slug}/Projects.md"
+        description: "Offer existing project-management/ folders; link picks by name only"
+      - step: 7
+        action: report
+        description: "Report modules, concepts and linked projects; suggest continue learning"
+    rules:
+      - "Nothing is written before the draft is confirmed"
+      - "A course-sourced plan mirrors the material — never add modules or objectives it does not contain"
+      - "A drafted plan cites every source with its URL and the date accessed"
+      - "Every concept starts at —; only save-learning and confirmed quizzes change confidence"
+      - "Projects are linked by name only; project-management/ is never written from here"
+    level_history:
+      1: "Base: topic scaffold from learning/_template/, drafted or course-mirrored plan, concept table at —, projects linked by name"
+
+  # ---------------------------------------------------------------------------
+  continue-learning:
+    description: >
+      Use when user says 'continue learning [topic]', 'study topic [topic]', 'list learning topics', or
+      'continue learning' with no topic. Resumes a learning topic: a short brief, quizzes on
+      shaky concepts first, then the next objective or an exercise.
+    tier: on_demand
+    level: 1
+    triggers:
+      explicit: ["continue learning", "study topic", "list learning topics"]
+      passive: null
+    activation_message: "_(continue-learning activates)_"
+    protocol:
+      - step: 1
+        action: resolve
+        target: "learning/"
+        description: "Open the named topic, or list topics with status, current module and shaky count"
+      - step: 2
+        action: read
+        target: "learning/{slug}/"
+        description: "Brief in at most 8 lines: current module and its unticked objectives, shaky count, active exercises, last log line"
+      - step: 3
+        action: quiz
+        target: "learning/{slug}/Notes/"
+        description: >
+          Shaky concepts first, oldest last-reviewed first, at most 3 per session: 2–3 questions
+          from the note, say what was right and missed, propose a rating, update Confidence and
+          Last reviewed only on a yes. Skipped on 'skip review'
+      - step: 4
+        action: choose
+        description: >
+          Study the next objective (explain it; draft notes held for save learning) or take an
+          exercise (generated, or the course's own; written now to Exercises/Active/{nn}-{slug}.md)
+      - step: 5
+        action: move
+        target: "learning/{slug}/Exercises/Done/"
+        description: "When a self-check passes, move the exercise to Done only on a yes"
+    rules:
+      - "A confidence rating changes only after the user confirms the quiz result"
+      - "Never quiz a concept without a note"
+      - "Shaky concepts come before new material unless the user says skip review"
+      - "At most 3 concepts are quizzed per session"
+      - "Concept notes are written by save-learning; exercises are written here"
+      - "Never tick an objective here — that is save-learning's job"
+    level_history:
+      1: "Base: topic list, ≤ 8-line brief, quizzes on up to 3 shaky concepts with confirmed ratings, study or exercise next"
+
+  # ---------------------------------------------------------------------------
+  save-learning:
+    description: >
+      MUST use when user says 'save learning'. Records a study session: ticks confirmed
+      objectives, writes concept notes, adds new concepts at shaky, appends the log, and asks
+      before closing a module or the topic. Bare 'save' belongs to save-memory.
+    tier: on_demand
+    level: 1
+    triggers:
+      explicit: ["save learning"]
+      passive: null
+    activation_message: "_(save-learning activates)_"
+    protocol:
+      - step: 1
+        action: resolve
+        description: "The topic worked on this session; ask if several or none"
+      - step: 2
+        action: write
+        target: "learning/{slug}/Study-Plan.md"
+        description: "List objectives that look met, with evidence; tick only the ones the user confirms"
+      - step: 3
+        action: write
+        target: "learning/{slug}/Notes/{concept}.md"
+        description: >
+          Write or update a note per concept studied (additive; 2–3 Check yourself questions).
+          A first-time concept gets its Progress row at shaky with today's date; existing ratings
+          never change here
+      - step: 4
+        action: write
+        target: "learning/{slug}/Progress.md"
+        description: "Append today's Log entry: studied, reviewed (with rating changes), exercised"
+      - step: 5
+        action: confirm
+        description: "Ask before closing a finished module (✓) or marking the topic done"
+      - step: 6
+        action: report
+        description: "Report objectives ticked, notes written, new concepts, and every file touched"
+    rules:
+      - "Objectives are ticked only on the user's confirmation"
+      - "New concepts enter at shaky; existing ratings are never changed here"
+      - "A Progress row is added only together with its note"
+      - "Notes are additive; the log is append-only"
+      - "Closing a module or finishing a topic is always asked"
+      - "Bare 'save' belongs to save-memory"
+    level_history:
+      1: "Base: confirmed objective ticks, additive notes with quiz questions, new concepts at shaky, append-only log, asked closure"
+
+  # ---------------------------------------------------------------------------
+  career:
+    description: >
+      Use when the user says 'career profile', 'update my profile', 'find jobs',
+      'search jobs', 'job search', 'tailor cv for [job]', 'cover letter for [job]',
+      'job status', 'job tracker', 'applied to [job]' or 'update application [job]',
+      or asks to analyse jobs, tailor a CV, or track job applications.
+    tier: on_demand
+    level: 2
+    triggers:
+      explicit: ["career profile", "update my profile", "find jobs", "search jobs", "job search", "tailor cv", "tailor my cv", "cover letter for", "job status", "job tracker", "applied to", "update application"]
+      passive: null
+    activation_message: "_(career activates)_"
+    folder_root: "career/"
+    commands:
+      career-profile:
+        triggers: ["career profile", "update my profile"]
+        protocol:
+          - step: 1
+            action: read
+            target: "career/_template/structure.yaml"
+            description: "First run only: create every folder and file it lists under career/ — never hardcode the list"
+          - step: 2
+            action: read
+            description: >
+              Gather sources read-only: the CVs the user names, main/main-memory.md,
+              project-management/*/General.md, public GitHub repos, the portfolio profile data
+          - step: 3
+            action: write
+            target: "career/profile.md"
+            description: >
+              Draft with a Source on every achievement and figure; single-source claims from old
+              CVs go under Needs confirmation. Interview for gaps one question at a time
+              (roles, seniority, location priority, work mode, salary, notice, authorisation,
+              must-haves, deal-breakers, public contact). Show the draft and wait
+          - step: 4
+            action: write
+            target: "career/cv/master/"
+            description: "Build the master CV source from profile.md only; render to outputs/career-cv/master.pdf and check it"
+      job-search:
+        triggers: ["find jobs", "search jobs", "job search"]
+        protocol:
+          - step: 1
+            action: read
+            target: "career/profile.md"
+            description: "Read Preferences; ask for anything missing before searching"
+          - step: 2
+            action: search
+            description: >
+              Tier by tier in the profile's location priority (most effort on tier 1). LinkedIn's
+              public job API (jobs-guest search + jobPosting/{id}) and employer ATS boards are
+              readable; JobStreet, Indeed, Ricebowl, Maukerja, foundit and Glassdoor return 403, so search
+              each by name with allowed_domains and treat results as snippets (Hiredly ad pages are readable).
+              Default to the profile's target roles; when asked, widen to adjacent role types the profile
+              evidences and tag each lead with role_type. Drop duplicates, closed ads, ads under the floor,
+              deal-breakers (checked against the company's business model) and ineligible ads, with reasons
+          - step: 3
+            action: research
+            description: >
+              Shortlist up to 10. Research each company with sources: review ratings and counts,
+              size, ownership, stability, praise and criticism. Say "not found" rather than guess
+          - step: 4
+            action: score
+            description: >
+              Fit Strong/Possible/Weak from a Meets/Partly/Gap requirement table; role 1-5; company 1-5;
+              overall = fit points (5/3/1) x 0.4 + role x 0.3 + company x 0.3; bands Apply now >= 4.2,
+              Apply >= 3.5, Consider >= 3.0, else Low priority. Write why it suits and the reason for the rating
+          - step: 5
+            action: write
+            target: "career/runs/{YYYY-MM-DD}-leads.json"
+            description: >
+              Save the run, then run plugins/violet-skills/skills/career/scripts/build_report.py on it:
+              job files, tracker rows, search log, outputs/career-jobs/{date}-job-search.xlsx and .html
+          - step: 6
+            action: report
+            description: "Publish the HTML as a private artifact; report its link, the Excel path, the ranked list, summarised ads and drops"
+      tailor:
+        triggers: ["tailor cv", "tailor my cv", "cover letter for"]
+        protocol:
+          - step: 1
+            action: read
+            target: "career/jobs/{job}.md career/profile.md"
+            description: "Map every requirement to profile evidence; list gaps plainly"
+          - step: 2
+            action: ask
+            description: >
+              Draft the CV (and cover note if asked, max 200 words) by choosing, ordering and
+              rewording profile facts only. Show the requirement map and changes; wait
+          - step: 3
+            action: write
+            target: "outputs/career-cv/{job-file-name}.pdf"
+            description: "Render, check, link from the job file, set status ready"
+      track:
+        triggers: ["job status", "job tracker", "applied to", "update application"]
+        protocol:
+          - step: 1
+            action: write
+            target: "career/jobs/{job}.md career/tracker.md"
+            description: >
+              On the user's word only: append a dated Log line, update Status and the tracker
+              row; next action after applying is a follow-up in 10 working days
+          - step: 2
+            action: report
+            description: "Counts by status, follow-ups due, interviews coming up, offers awaiting a decision"
+    rules:
+      - "Applications use only profile.md facts — never invent, inflate, merge or round up; a gap is reported as a gap"
+      - "Every profile fact has a source; unsourced claims stay under Needs confirmation"
+      - "Never apply, send, email, message or log in on the user's behalf"
+      - "Status moves past ready only on the user's word"
+      - "Search results are leads: record URL and date seen; mark snippet-only ads"
+      - "Location priority comes from the profile and orders search effort and the report"
+      - "No confidential employer detail in any CV; contact details follow the profile's Public contact row"
+      - "career/ is personal data — never copy it to a public repo, shared document or the public template"
+      - "Generated PDFs go to outputs/career-cv/; sources stay in career/"
+      - "Every rating has a written reason and every company claim has a source"
+      - "Snippet-only leads are capped at a Possible fit and marked as such in every output"
+      - "Search reports go out as an artifact and an Excel file, both built from the run JSON by build_report.py"
+    level_history:
+      1: "Base: sourced profile with first-run scaffold and interview, tiered web job search with ad snapshots and fit analysis, profile-only CV tailoring, application tracker"
+      2: "Company research, fit/role/company scoring with overall rating, band and reason, run JSON, Excel and HTML artifact report via build_report.py"

@@ -1,0 +1,49 @@
+{
+  "run": {
+    "date": "2026-01-15",
+    "profile": "career/profile.md (updated 2026-01-10)",
+    "location_priority": ["Springfield", "Shelbyville", "Remote"],
+    "salary_floor": 6000,
+    "currency": "USD",
+    "deal_breakers": ["gambling or betting products", "support-only roles"],
+    "queries": ["backend engineer Springfield", "C# developer Springfield", "API developer Shelbyville"],
+    "sources": ["LinkedIn public job API", "Greenhouse", "Lever"],
+    "notes": "Example run: every company and ad here is fictional.",
+    "weights": {"fit": 0.4, "role": 0.3, "company": 0.3}
+  },
+  "leads": [
+    {
+      "id": "2026-01-15-acme-backend-engineer",
+      "company": "Acme Inc",
+      "role": "Backend Engineer",
+      "location": "Springfield",
+      "tier": 1,
+      "work_mode": "Hybrid",
+      "posted": "3 days ago (seen 2026-01-15)",
+      "applicants": "40",
+      "salary": "not stated",
+      "years_asked": "3+",
+      "url": "https://example.com/jobs/acme-backend-engineer",
+      "ad": "Builds and runs the order API. C#, PostgreSQL, message queues. Three or more years of backend work.",
+      "why": "The ad is mostly the API and data work the profile already shows.",
+      "match": [
+        ["3+ years backend development", "Four years building APIs (profile, Experience)", "✓"],
+        ["Message queues in production", "Used in one project, not in production", "~"],
+        ["Kubernetes", "No evidence in the profile", "✗"]
+      ],
+      "fit": "Strong",
+      "gaps": "No production Kubernetes.",
+      "red_flags": "None found.",
+      "company_research": "About 200 staff; reviews praise the engineering culture and criticise slow promotion.",
+      "company_sources": ["https://example.com/reviews/acme", "https://example.com/about/acme"],
+      "company_score": 4.0,
+      "role_score": 4.0,
+      "reason": "Strong fit on the core stack; the one gap can be learnt on the job.",
+      "role_type": "backend",
+      "ad_captured": "summary of the full ad"
+    }
+  ],
+  "dropped": [
+    ["Lucky Spin Ltd", "Platform Developer", "Online betting operator: deal-breaker", "https://example.com/jobs/lucky-spin-platform-developer"]
+  ]
+}

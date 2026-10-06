@@ -44,8 +44,10 @@ Triggers: "list projects", "show projects"
 
 - [ ] **Step 1**: List every directory under `project-management/`, skipping names that start with `_`
       (`_template`, `_project-structure-memory` are infrastructure, not projects)
-- [ ] **Step 2**: For each project, read the first `## YYYY-MM-DD` header in `Timeline.md` — that is its
-      last activity date
+- [ ] **Step 2**: For each project, scan **every** `## YYYY-MM-DD` header in `Timeline.md` and take the
+      **latest** date — that is its last activity. Never take the first header: some timelines are
+      written oldest-first and some newest-first, so position does not imply recency. A header may
+      carry a suffix (`## 2026-04-17 (session 2)`) — match the leading date and ignore the rest
 - [ ] **Step 3**: Count feature files under `Features/*/Development/` (active) and `Features/*/Completed/` (done)
 - [ ] **Step 4**: Present newest-activity-first:
 
@@ -60,6 +62,9 @@ Triggers: "list projects", "show projects"
 1. `project-management/` is the only project index — there is no separate registry file to read or write
 2. Never create or modify project folders here — creation belongs to `document-project`
 3. Sort by last activity, not alphabetically — the useful question is "what was I last working on"
+4. **Last activity is the newest date in `Timeline.md`, never the topmost one.** Timeline ordering is
+   not consistent across projects, and reading position as recency reports a project's birth date as
+   its last activity
 
 ## Edge Cases
 
@@ -67,8 +72,9 @@ Triggers: "list projects", "show projects"
 |-----------|----------|
 | `project-management/` missing | Inform user, suggest `document project [name]` |
 | Project folder has no `Timeline.md` | Show it with `last active —` rather than skipping it |
+| `Timeline.md` has no `## YYYY-MM-DD` headers | Show `last active —`, same as a missing `Timeline.md` |
 | Project folder has no `Features/` yet | Show `0 active · 0 completed` |
 
 ## Level History
 
-- **Lv.6** — Current behaviour, as described in the Protocol and Rules above
+- **Lv.7** — Current behaviour, as described in the Protocol and Rules above

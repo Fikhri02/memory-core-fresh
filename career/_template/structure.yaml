@@ -1,0 +1,25 @@
+# career/_template/structure.yaml
+# Defines the scaffold the career skill creates on its first run (career-profile).
+# The skill reads this file; it never hardcodes the folder or file list.
+#
+# Generated CV PDFs do NOT live here: they go to outputs/career-cv/ (memory-core rule:
+# generated documents go to outputs/<project>-<kind>/). career/cv/master/ holds the
+# editable source the PDFs are rendered from.
+
+folders:
+  - cv/master
+  - jobs
+  - runs        # one {YYYY-MM-DD}-leads.json per job search (shape: leads-example.json); build_report.py reads it
+
+files:
+  - name: profile.md
+    template: profile.md
+  - name: tracker.md
+    template: tracker.md
+  - name: searches.md
+    template: searches.md
+  - name: timeline.md
+    template: timeline.md
+
+# Per-job files are created by job-search from job.md:
+#   jobs/{YYYY-MM-DD}-{company-slug}-{role-slug}.md
