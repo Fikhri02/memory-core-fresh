@@ -180,14 +180,14 @@ def validate_spec(spec: VioletSpec, memory_root: Path) -> list[str]:
             if not (memory_root / mf.path).exists():
                 warnings.append(f"MISSING memory file: {mf.path}")
 
-    expected_skills = 17
-    if len(spec.skills) != expected_skills:
-        warnings.append(f"Expected {expected_skills} skills, found {len(spec.skills)}")
-
-    for name, skill in spec.skills.items():
-        skill_dir = memory_root / "plugins" / "violet-skills" / "skills" / name
-        if not skill_dir.exists():
-            warnings.append(f"MISSING skill directory: plugins/violet-skills/skills/{name}/")
+    # Compare names, not a count: a hard-coded total went stale every time a skill was added.
+    skills_root = memory_root / "plugins" / "violet-skills" / "skills"
+    on_disk = ({d.name for d in skills_root.iterdir() if (d / "SKILL.md").is_file()}
+               if skills_root.is_dir() else set())
+    for name in sorted(set(spec.skills) - on_disk):
+        warnings.append(f"MISSING skill directory: plugins/violet-skills/skills/{name}/")
+    for name in sorted(on_disk - set(spec.skills)):
+        warnings.append(f"MISSING from spec: plugins/violet-skills/skills/{name}/ has no entry in memory-core.yaml")
 
     return warnings
 

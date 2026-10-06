@@ -1,0 +1,21 @@
+# learning/_template/structure.yaml
+# start-learning reads this to scaffold learning/{topic}/. Skills never hardcode this list.
+#
+# Created on demand, not at scaffold time:
+#   Notes/{concept}.md               from note.md      (save-learning)
+#   Exercises/Active/{nn}-{slug}.md  from exercise.md  (continue-learning)
+
+folders:
+  - Notes
+  - Exercises/Active
+  - Exercises/Done
+
+files:
+  - name: General.md
+    template: general.md
+  - name: Study-Plan.md
+    template: study-plan.md
+  - name: Progress.md
+    template: progress.md
+  - name: Projects.md
+    template: projects.md

@@ -325,6 +325,69 @@ def package_orphan_marker(root: Path) -> list[Finding]:
     return out
 
 
+# --- learning topics -------------------------------------------------------
+# learning/{topic}/Progress.md rows drive quizzes; a rated concept with no note cannot be quizzed.
+
+LEARNING_ROW = re.compile(r"^\|([^|\n]*)\|([^|\n]*)\|([^|\n]*)\|([^|\n]*)\|([^|\n]*)\|\s*$", re.M)
+PROJECT_LINK = re.compile(r"^- `([^`]+)`", re.M)
+MD_LINK_TARGET = re.compile(r"\]\(([^)]+)\)")
+SEPARATOR_CELL = re.compile(r"^:?-+:?$")
+RATED = {"shaky", "okay", "solid"}
+
+
+def progress_rows(text: str) -> list[tuple[str, str, str, str, str]]:
+    """Data rows of a Progress.md concept table, cells stripped. The header and separator are
+    skipped; concept ids are taken in any shape, since only one skill path promises kebab-case."""
+    rows = []
+    for cells in LEARNING_ROW.findall(text):
+        cells = tuple(c.strip() for c in cells)
+        if cells[0].lower() == "concept" or SEPARATOR_CELL.match(cells[0]):
+            continue
+        rows.append(cells)
+    return rows
+
+
+def _rating(cell: str) -> str:
+    """`**Shaky**` → shaky. Anything outside RATED (—, –, -, n/a, blank) counts as not yet studied."""
+    return cell.strip("*_` ").lower()
+
+
+def _note_path(cell: str) -> str:
+    """A Note cell may be a bare path, a `backticked` path, or a [label](path) link."""
+    link = MD_LINK_TARGET.search(cell)
+    return (link.group(1) if link else cell).strip().strip("`")
+
+
+def learning_drift(root: Path) -> list[Finding]:
+    learning = root / "learning"
+    if not learning.is_dir():
+        return []
+    pm = root / "project-management"
+    out: list[Finding] = []
+    for topic in sorted(d for d in learning.iterdir() if d.is_dir() and not d.name.startswith("_")):
+        progress = topic / "Progress.md"
+        if progress.is_file():
+            for concept, _module, cell_rating, _reviewed, cell in progress_rows(progress.read_text(encoding="utf-8")):
+                confidence = _rating(cell_rating)
+                if confidence not in RATED:
+                    continue
+                note = _note_path(cell)
+                if not note or not (topic / note).is_file():
+                    out.append(
+                        Finding("learning_note_missing", "medium", _rel(progress, root),
+                                f"`{concept}` is rated {confidence} but its note {note or '(none)'} does not exist — it cannot be quizzed")
+                    )
+        projects = topic / "Projects.md"
+        if projects.is_file():
+            for name in PROJECT_LINK.findall(projects.read_text(encoding="utf-8")):
+                if not (pm / name).is_dir():
+                    out.append(
+                        Finding("learning_project_missing", "medium", _rel(projects, root),
+                                f"links `{name}`, which is not a project under project-management/")
+                    )
+    return out
+
+
 def run_all(root: Path) -> dict:
     findings: list[Finding] = []
     for check in (
@@ -335,6 +398,7 @@ def run_all(root: Path) -> dict:
         ecosystem_feature_note_drift,
         package_region_drift,
         package_orphan_marker,
+        learning_drift,
         complete_features_still_in_development,
         stale_timelines,
     ):

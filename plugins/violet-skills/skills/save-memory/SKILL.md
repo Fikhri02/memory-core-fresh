@@ -38,7 +38,7 @@ already loaded.
 - [ ] **Step 2**: Update session recap, active project, what was done — `main/current-session.md`
 - [ ] **Step 3**: Update if the user's profile or the companion's preferences evolved — `main/main-memory.md` *(condition: if_profile_evolved)*
 - [ ] **Step 4**: Trim session history — keep the **3 most recent** session blocks in `main/current-session.md`; move anything older, verbatim, to the top of `main/session-archive.md`
-- [ ] **Step 5**: If project work happened this session, suggest — but do not run — `save project` so the project Timeline gets its own entry
+- [ ] **Step 5**: If project work happened this session, suggest — but do not run — `save project` so the project Timeline gets its own entry. If study on a learning topic happened, likewise suggest `save learning`. If job-search work happened — a search run, a tailored CV, a status change — likewise suggest `save career`
 - [ ] **Step 6**: Report: 'Memory saved.'
 
 ## Rules
@@ -46,8 +46,9 @@ already loaded.
 1. Only update main-memory.md when genuine new knowledge about the user or the companion has emerged
 2. current-session.md always updated on save
 3. `current-session.md` is RAM, not a log — at most 3 prior session blocks. Older blocks move to `main/session-archive.md` unchanged; never summarise or delete them on the way out
-4. Bare `"save"` belongs to this skill. It never writes project files — it suggests `save project` and lets the user decide
+4. Bare `"save"` belongs to this skill. It never writes project or learning files — it suggests `save project` or `save learning` and lets the user decide
 
 ## Level History
 
-- **Lv.2** — Current behaviour, as described in the Protocol and Rules above
+- **Lv.2** — Session RAM with a 3-session cap and verbatim archive; suggests `save project`
+- **Lv.3** — Current behaviour: also suggests `save learning` after a study session

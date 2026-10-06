@@ -136,19 +136,24 @@ Output: UX principles · Experience architecture · Feature prioritization (MVP 
 Output: Flow diagrams · State machine definitions · Edge case handling
 
 **Phase 4 — UI Design**
-- [ ] Define screen structures
-- [ ] Define layout hierarchy per screen
-- [ ] Define visual priority
-- [ ] Define mobile-first constraints
+Run `/ui-design:design-screen` per key screen. If the plugin is not installed, work the checklist directly.
+- [ ] Define screen structures and layout grid
+- [ ] Establish visual hierarchy and visual priority
+- [ ] Apply typography and colour per screen
+- [ ] Define spacing and responsive behaviour across breakpoints (mobile-first)
+- [ ] Specify dark mode adaptation
 
-Output: Screen breakdown · Layout rules · UI hierarchy decisions
+Output: Screen specs — layout · hierarchy · typography · colour · spacing · responsive · dark mode
 
 **Phase 5 — Design System**
-- [ ] Define design tokens (colors, typography, spacing)
-- [ ] Define reusable components
-- [ ] Define component states
+Run `/ui-design:color-palette`, then `/ui-design:type-system`. If the plugin is not installed, work the checklist directly.
+- [ ] Build colour tonal scales and map them to semantic roles
+- [ ] Verify contrast ratios and define dark mode mappings
+- [ ] Build the modular type scale — sizes, weights, line heights, responsive behaviour
+- [ ] Define the spacing scale
+- [ ] Define reusable components and their states
 
-Output: Token system · Component inventory · Component specs
+Output: Colour system · Type system · Spacing scale · Component inventory · Component specs
 
 **Phase 6 — Prototyping & Testing**
 - [ ] Define validation strategy
@@ -256,4 +261,6 @@ Output: Engineering task list · Dependency map · Test strategy · Rollout plan
 
 ## Level History
 
-- **Lv.2** — Current behaviour, as described in the Protocol and Rules above
+- **Lv.2** — Phase-by-phase planning for both project types
+- **Lv.3** — Current behaviour: Phases 4 and 5 delegate to the `ui-design` commands
+  (`design-screen`, `color-palette`, `type-system`), falling back to their own checklists
