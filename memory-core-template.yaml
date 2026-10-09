@@ -1622,3 +1622,407 @@ skills:
     level_history:
       1: "Base: sourced profile with first-run scaffold and interview, tiered web job search with ad snapshots and fit analysis, profile-only CV tailoring, application tracker"
       2: "Company research, fit/role/company scoring with overall rating, band and reason, run JSON, Excel and HTML artifact report via build_report.py"
+
+  # ---------------------------------------------------------------------------
+  log-debugging:
+    description: >
+      Use when user says 'log debugging', 'log this debug', 'debug log',
+      'save debug log', or 'continue debug log [slug]'. Records a debugging
+      session — symptom, root cause, solution, dead ends, and the step-by-step
+      hunt — as a searchable file under debugging/ for future reference. Also
+      suggested, never applied, after a session that took several diagnostic
+      steps to reach a root cause.
+    tier: on_demand
+    level: 1
+    triggers:
+      explicit:
+        - "log debugging"
+        - "log this debug"
+        - "debug log"
+        - "save debug log"
+        - "continue debug log"
+        - "resolve debug log"
+        - "list debug logs"
+      passive: "debugging reached a root cause after 3+ diagnostic steps — suggest only, never write"
+    activation_message: "Logging the debug session..."
+    protocol:
+      - step: 1
+        action: derive
+        description: "Slug as {project}-{symptom in 3-4 words}; name for the symptom, not the cause"
+      - step: 2
+        action: check
+        target: debugging/
+        description: "Search open/ then resolved/ for the slug; resume instead of creating a duplicate"
+      - step: 3
+        action: resolve_project
+        description: >
+          Match cwd or git origin against the Repositories table in each
+          project-management/*/General.md. No match means Project is
+          '(not tracked)' — never scaffold a project entry from here.
+      - step: 4
+        action: write
+        target: debugging/open/{slug}.md
+        description: "Symptom (verbatim), root cause, solutions, dead ends, dated step-by-step log"
+      - step: 5
+        action: symlink
+        target: project-management/{project}/Debugging/{slug}.md
+        description: "Only when the project matched and the source file exists"
+        condition: if_project_matched
+      - step: 6
+        action: offer
+        description: "If the cause is known and fixed, offer the move to resolved/ — ask, never move"
+    output_rules:
+      - symptom_verbatim: true
+      - append_only: true
+      - preserve_dead_ends: true
+      - never_auto_resolve: true
+    level_history:
+      1: "Base: write, resume, and resolve a debug log; project matching by git origin; symptom-first slugs; append-only step log with preserved dead ends"
+
+  # ---------------------------------------------------------------------------
+  architecture-review:
+    description: >
+      Use when user says 'architecture review', 'review architecture', 'study
+      architecture', 'document architecture', 'review tech stack', or 'assess
+      tech stack'. Studies a repository's architecture and stack from real file
+      evidence — inventories technologies, weighs the pros and cons of each in
+      context, and ranks improvements — then writes the result to
+      notes/architecture-review/{project}.md. Evidence before opinion: nothing
+      is named that cannot be tied to a file.
+    tier: on_demand
+    level: 1
+    triggers:
+      explicit:
+        - "architecture review"
+        - "review architecture"
+        - "study architecture"
+        - "document architecture"
+        - "review tech stack"
+        - "assess tech stack"
+        - "list architecture reviews"
+    activation_message: "Reviewing the architecture..."
+    independence: >
+      Does not touch project-management/. No project resolution, no Timeline
+      entry, no symlink. It reviews whatever repository is in front of it and
+      writes one file under notes/architecture-review/.
+    core_rule: >
+      Evidence before opinion. Never name a technology or make a claim that
+      cannot be tied to a file in the repository. Inventory first, analyse
+      second, write last.
+    protocol:
+      - step: 1
+        action: identify
+        description: >
+          Project name from a root manifest's name field (package.json,
+          pyproject.toml, Cargo.toml, composer.json, go.mod), else the git
+          origin repo name, else the directory basename. Git repo link from
+          git remote get-url origin, normalised to https; no remote means the
+          absolute local path. Also capture branch and short HEAD SHA. Slug =
+          name lowercased and hyphenated.
+      - step: 2
+        action: check
+        target: notes/architecture-review/{slug}.md
+        description: >
+          If it exists, ask before writing — overwrite, or preserve the current
+          one as {slug}-{YYYY-MM-DD}.md first. Never silently overwrite.
+      - step: 3
+        action: gather_evidence
+        description: >
+          Dependency manifests and lockfiles, runtime and infra configs, CI/CD,
+          the directory tree 2-3 levels with entry points, data layer schemas
+          and migrations, config and env examples, docs and ADRs. Tag every
+          technology [observed] (in a manifest or config) or [inferred] (from a
+          named code pattern).
+      - step: 4
+        action: identify_pattern
+        description: >
+          Name the architecture — monolith, modular monolith, microservices,
+          layered, hexagonal, event-driven, serverless, MVC — with the files and
+          structure that indicate it. 'Mixed' and 'unclear' are valid answers.
+      - step: 5
+        action: analyse
+        description: >
+          Advantages AND disadvantages per major choice, grounded in this
+          project's usage rather than textbook feature lists. Improvements
+          ranked by impact against effort.
+      - step: 6
+        action: write
+        target: notes/architecture-review/{slug}.md
+        description: >
+          Header carries Project, Git repo link, branch @ commit, and date.
+          Sections: executive summary, architecture pattern (diagram only when
+          boundaries are genuinely visible), tech stack inventory table,
+          advantages and disadvantages, ranked improvements table, open
+          questions and not examined.
+      - step: 7
+        action: verify
+        description: >
+          Cross-check every technology against a real file and cut what cannot
+          be proven; confirm every major choice has both a pro and a con;
+          confirm improvements are ranked; confirm scope is stated.
+      - step: 8
+        action: report
+        description: "Path written, tech count, top three recommendations"
+    output_rules:
+      - evidence_required: true
+      - observed_or_inferred_tagging: true
+      - balance_required: true
+      - improvements_ranked: true
+      - scope_stated: true
+      - read_only_on_repo: true
+      - never_overwrite_unasked: true
+      - never_touches_project_management: true
+    scope_handling:
+      monorepo: "Stack rows per package or service; shared tooling noted once; sampled packages listed"
+      large_repo: "Prioritise entry points, shared libraries and manifests; state sampled versus skipped"
+      sparse_repo: "Fall back to code patterns and imports, tag [inferred], lower stated confidence"
+      polyglot: "One table, layer rows grouped by language; name the runtime boundary in the pattern section"
+    level_history:
+      1: "Base: evidence-first inventory with observed/inferred tagging, pattern identification, balanced per-choice analysis, impact x effort ranked improvements, verify pass; writes notes/architecture-review/{project}.md with project name and git URL; independent of project-management/"
+
+  # ---------------------------------------------------------------------------
+  brain:
+    description: >
+      Use when user says 'brain on [topic]', 'open brain [topic]', 'think
+      through [topic]', 'discuss [topic] theoretically', 'continue brain
+      [topic]', 'save brain', 'mark brain [topic] settled', or 'park brain
+      [topic]'. Captures theoretical discussion — architecture, frameworks,
+      databases, UI/UX — as accumulating topic files under brain/. Builds
+      nothing: never writes code, scaffolds a project, or creates a plan.
+    tier: on_demand
+    level: 1
+    triggers:
+      explicit:
+        - "brain on"
+        - "save brain"
+        - "continue brain"
+        - "open brain"
+        - "think through"
+        - "discuss theoretically"
+        - "mark brain settled"
+        - "park brain"
+      passive: null
+    activation_message: "_(brain activates)_"
+    folder_root: "brain/"
+    file_format: "{domain}/{topic}.md"
+    commands:
+      brain-start:
+        triggers: ["brain on", "open brain", "think through", "discuss theoretically"]
+        protocol:
+          - step: 1
+            action: search
+            target: "brain/"
+            description: >
+              Slugify the topic and search brain/**/. Exactly one match hands to
+              brain-resume. Two or more domains holding the same slug stops the
+              skill: list every path and ask which is meant, never pick one
+          - step: 2
+            action: resolve_domain
+            target: "brain/"
+            description: >
+              List existing domain folders and propose an existing one before
+              inventing, matching case-insensitively and across singular/plural.
+              A new domain requires an explicit yes
+          - step: 3
+            action: discuss
+            description: >
+              Discuss without writing. The file is created on save, never on
+              start, so an abandoned discussion leaves nothing behind
+      brain-save:
+        triggers: ["save brain"]
+        protocol:
+          - step: 1
+            action: review
+            description: >
+              Identify every topic the session touched; a session that was half
+              implementation captures only the theory threads and names which it
+              ignored
+          - step: 2
+            action: check
+            description: >
+              If nothing theoretical was discussed, write nothing, say so, stop
+          - step: 3
+            action: write
+            target: "brain/README.md"
+            description: >
+              Create brain/ and its README from the canonical convention doc if
+              the store does not exist yet
+          - step: 4
+            action: plan_writes
+            description: >
+              Resolve the domain for every topic discovered in step 1 that was
+              not already resolved this session, then present the write plan —
+              each path new or existing with last-touched date, any newly
+              invented domain named — and wait for confirmation
+          - step: 5
+            action: write
+            target: "brain/{domain}/{topic}.md"
+            description: >
+              Append one dated Log entry per topic, scoped to only that thread.
+              If a section for today already exists, extend it rather than
+              opening a duplicate
+          - step: 6
+            action: write
+            description: >
+              Rewrite Current Thinking only if the position actually moved
+          - step: 7
+            action: write
+            description: "Update Open Questions — add what surfaced, check off what resolved"
+          - step: 8
+            action: offer
+            skill: "brainstorm"
+            description: >
+              If the discussion turned actionable, write Implications and offer a
+              brainstorm handoff once per topic. On yes, invoke the brainstorm
+              skill and let it author the file — brain never writes into
+              brainstorming/ itself
+          - step: 9
+            action: offer
+            target: "project-management/{project}/Timeline.md"
+            description: >
+              Project set and documented: offer one Timeline line, never
+              automatic. Project set but not documented: keep the field, skip the
+              offer, and say why
+          - step: 10
+            action: write
+            description: "Cross-link the topics touched this session into each other's Related"
+      brain-resume:
+        triggers: ["continue brain"]
+        protocol:
+          - step: 1
+            action: search
+            target: "brain/{domain}/{topic}.md"
+            description: >
+              Locate the topic. No file: offer to start it, never create silently.
+              Two or more domains holding the slug: list every path and ask before
+              recapping anything
+          - step: 2
+            action: recap
+            description: "Two lines — the current position, and the question left open"
+          - step: 3
+            action: discuss
+            description: "Continue. Writes still happen only on 'save brain'"
+      status-transition:
+        triggers: ["mark brain settled", "park brain"]
+        protocol:
+          - step: 1
+            action: write
+            target: "brain/{domain}/{topic}.md"
+            description: "'mark brain settled' sets Status: settled"
+          - step: 2
+            action: write
+            target: "brain/{domain}/{topic}.md"
+            description: >
+              'park brain' asks for a reason, sets Status: parked, and appends
+              Parked Reason to the header block
+          - step: 3
+            action: check
+            description: >
+              Nothing moves on the filesystem — the folder carries the domain,
+              not the status
+    rules:
+      - "Builds nothing — never writes code, scaffolds a project, or creates a brainstorm or plan on its own initiative"
+      - "A slug held by two domains stops the writer — list both paths and ask, never pick one"
+      - "Never invents a domain folder without an explicit yes; propose an existing one first"
+      - "Log entries append — a prior dated entry is never rewritten or deleted"
+      - "Current Thinking is the only rewritable prose region; header fields and Open Questions checkboxes are maintained in place"
+      - "Files are created on save, never on start"
+      - "Never writes into project-management/ beyond the single offered Timeline line"
+      - "The log's fourth field is 'Still open' — a question, never a task or a next step"
+    output_rules:
+      - append_only_log: true
+      - current_thinking_is_sole_rewritable_prose: true
+      - builds_nothing: true
+      - create_on_save_not_on_start: true
+    level_history:
+      1: "Base: topic files in free-form domain folders, passive capture flushed on save, multi-topic split with a confirmed write plan and per-topic domain resolution, offered project Timeline line, single-offer brainstorm handoff delegated to the brainstorm skill"
+
+  # ---------------------------------------------------------------------------
+  brain-recall:
+    description: >
+      Use when user says 'what do I think about [topic]', 'recall brain
+      [topic]', 'list brain', 'search brain [term]', 'what have I thought
+      about for [project]', or 'stale brain'. Reads the theoretical topic
+      files under brain/ — lookup, browse, search, project view, and health.
+      Strictly read-only: never writes a file.
+    tier: on_demand
+    level: 1
+    triggers:
+      explicit:
+        - "what do I think about"
+        - "list brain"
+        - "search brain"
+        - "stale brain"
+        - "recall brain"
+        - "what have I thought about for"
+      passive: null
+    activation_message: "_(brain-recall activates)_"
+    folder_root: "brain/"
+    commands:
+      lookup:
+        triggers: ["what do I think about", "recall brain"]
+        protocol:
+          - step: 1
+            action: search
+            target: "brain/{domain}/{topic}.md"
+            description: >
+              Slugify and find the topic. A slug held by two domains is reported
+              as an ambiguity with both paths, never resolved by guessing. No
+              match: say so and offer the three closest slugs
+          - step: 2
+            action: report
+            description: >
+              Return Current Thinking, the unchecked Open Questions, and the date
+              of the most recent Log entry — not the whole file
+      browse:
+        triggers: ["list brain"]
+        protocol:
+          - step: 1
+            action: report
+            target: "brain/"
+            description: >
+              Walk brain/{domain}/ one level deep, group by domain
+              alphabetically, topics newest-touched first, each with status and
+              latest Log date
+      search:
+        triggers: ["search brain"]
+        protocol:
+          - step: 1
+            action: report
+            target: "brain/"
+            description: >
+              Case-insensitive search ranked by section — Current Thinking >
+              Open Questions > Implications > Log — not by match count. Print the
+              path, the section the hit landed in, and the matching line
+      project-view:
+        triggers: ["what have I thought about for"]
+        protocol:
+          - step: 1
+            action: report
+            description: >
+              Filter topics on the Project field, print each with its Current
+              Thinking line, and state whether that project has a
+              project-management entry
+      health:
+        triggers: ["stale brain"]
+        protocol:
+          - step: 1
+            action: report
+            target: "brain/"
+            description: >
+              Report evolving topics untouched 90+ days, unresolved [[links]] as
+              opportunities rather than errors, and slugs colliding across
+              domains — then fix nothing
+    rules:
+      - "Never writes a file — not a brain topic, not a project file, not a note; report and suggest, never repair"
+      - "Never creates brain/ — if the store is absent, say so and stop; creating it is the brain skill's job"
+      - "Ambiguous slugs are reported with both paths, never resolved by guessing"
+      - "Unresolved [[links]] are opportunities, not errors"
+      - "lookup returns the position, not the whole file"
+      - "'recall [topic]' without the word brain is not this skill's trigger"
+    output_rules:
+      - never_writes: true
+      - never_creates_the_store: true
+      - ambiguity_reported_not_resolved: true
+    level_history:
+      1: "Base: lookup, browse, section-ranked search, project view, and health across staleness, unresolved links, and cross-domain slug collisions"

@@ -50,6 +50,10 @@ Then open this folder in Claude Code and type your companion's name.
 | `save-learning` | `"save learning"` | Ticks confirmed objectives, writes concept notes, appends the study log |
 | `career` | `"career profile"`, `"find jobs"`, `"tailor cv for [job]"`, `"save career"` | Sourced profile, scored job search, profile-only CV tailoring, application tracker and timeline |
 | `forge-skill` | `"create skill"`, `"level up"` | Proposes new skills from repeated patterns — you approve, it never self-writes |
+| `log-debugging` | `"log debugging"`, `"debug log"` | Records a debugging session — symptom, root cause, dead ends — as a searchable file under `debugging/` |
+| `architecture-review` | `"architecture review"` | Studies a repo's architecture and stack from file evidence, writes `notes/architecture-review/{project}.md` |
+| `brain` | `"brain on [topic]"`, `"save brain"` | Accumulates theoretical thinking as topic files under `brain/` — builds nothing |
+| `brain-recall` | `"what do I think about [topic]"`, `"list brain"` | Reads the brain — lookup, browse, search, project view, health. Never writes |
 
 ### Platform support
 
@@ -97,6 +101,7 @@ memory-core/
 
   project-plans/              phase plans (active / archived / done)
   brainstorming/              brainstorm sessions (active / archived / done)
+  brain/                      theoretical topic files by domain — builds nothing
   delegate-task/Timeline/     delegated task files by year/date
   notes/                      investigation and analysis notes
   learning/                   study topics: plan, concept notes, progress, exercises
