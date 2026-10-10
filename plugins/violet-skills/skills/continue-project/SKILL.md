@@ -60,6 +60,9 @@ already loaded.
 - [ ] Read the bodies of any `context/` modules declaring `load: on_project_load` — the condition is
       now satisfied — and report them: `Context: +{module} (on_project_load)`
 - [ ] Read `project-management/{name}/General.md`
+- [ ] Read the header of `project-management/{name}/Design.md` (above its first `##`) and hold
+      its `**Layers**` value for the session — `design-preferences` loads those layer files when a
+      design session starts. Do not load them now. No `**Layers**` line → stay silent
 - [ ] Extract: project name, description, tech stack (skip repo detail)
 - [ ] Output a 2-line project summary to user
 

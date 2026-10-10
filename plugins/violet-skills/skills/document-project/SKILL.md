@@ -106,7 +106,9 @@ On confirmation:
     (or "Session opened — documentation started" when entered via `document project`)
   - `Components.md` from `_template/components.md` — template defaults, or inferred components if
     the scan made them obvious
-  - `Design.md` from `_template/design.md` — template defaults
+  - `Design.md` from `_template/design.md` — template defaults, then ask once: *"Which design
+    layers apply? (website / web-app / mobile / none — several are fine)"* and fill the
+    `**Layers**` line with the answer. A project with no UI gets `none`
 - [ ] Create symlinks in `Plans/` for any matching planning files:
   - `brainstorming/active/{slug}.md` → `Plans/{slug}-brainstorm.md`
   - `project-plans/active/{slug}.md` → `Plans/{slug}-plan.md`

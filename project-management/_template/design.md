@@ -1,5 +1,9 @@
 # Design — {project-name}
 
+**Layers**: 
+**Palette**:  · **Type**: 
+
+> Layers: website, web-app, mobile, or none — taste from `design/` loads for the layers declared here.
 > All UI implementations must follow this design standard. Before building any screen or component, read this file.
 
 ---

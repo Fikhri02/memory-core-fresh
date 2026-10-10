@@ -25,7 +25,7 @@ Then open this folder in Claude Code and type your companion's name.
 
 ## What You Get
 
-### 21 skills
+### 26 skills
 
 | Skill | Trigger | What it does |
 |-------|---------|--------------|
@@ -54,6 +54,7 @@ Then open this folder in Claude Code and type your companion's name.
 | `architecture-review` | `"architecture review"` | Studies a repo's architecture and stack from file evidence, writes `notes/architecture-review/{project}.md` |
 | `brain` | `"brain on [topic]"`, `"save brain"` | Accumulates theoretical thinking as topic files under `brain/` — builds nothing |
 | `brain-recall` | `"what do I think about [topic]"`, `"list brain"` | Reads the brain — lookup, browse, search, project view, health. Never writes |
+| `design-preferences` | any UI work, `"seed design"`, `"rank palettes"`, `"harvest design"` | Your design taste by layer (general · website · web-app · mobile): checks UI before it is shown, files rules from your reactions, seeds contrasting directions, ranks palettes and fonts 1–10 |
 
 ### Platform support
 
@@ -77,7 +78,7 @@ memory-core/
   AGENTS.md                   Codex entry point (generated)
 
   adapters/                   spec -> platform prompt generators
-  plugins/violet-skills/      21 SKILL.md files — hand-written, canonical for Claude Code
+  plugins/violet-skills/      26 SKILL.md files — hand-written, canonical for Claude Code
   _templates/main/            placeholder memory files, rendered into main/ by setup
 
   context/                    always-on memory modules — the folder IS the registry
@@ -106,6 +107,7 @@ memory-core/
   notes/                      investigation and analysis notes
   learning/                   study topics: plan, concept notes, progress, exercises
   career/                     profile, job files, tracker, search runs, timeline
+  design/                     design taste by layer, ranked palette and type libraries, seed journal
   migrations/                 packaged ecosystem features in transit (out / in / applied)
   outputs/                    generated platform prompts
 ```
