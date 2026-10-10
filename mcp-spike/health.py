@@ -14,6 +14,7 @@ Dependency-free on purpose: the YAML scan is a line match, not a parse.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from dataclasses import dataclass, asdict
 from datetime import date
@@ -353,26 +354,72 @@ def package_region_drift(root: Path) -> list[Finding]:
     return out
 
 
-def package_orphan_marker(root: Path) -> list[Finding]:
-    """A marker naming a package this machine has no record of applying."""
-    applied_dir = root / "migrations" / "applied"
-    if not applied_dir.is_dir():
-        return []          # nothing to judge against — a package may have been applied by hand
+LEDGER_INSTALLED = {"applied", "partial", "conflict-resolved"}
 
-    applied: set[str] = set()
-    for f in applied_dir.glob("*.md"):
-        applied.add(f.name.split(".pkg")[0])
-        found = PKG_FIELD.search(f.read_text(encoding="utf-8"))
-        if found:
-            applied.add(found.group(1))
+
+def _ledger_imports(root: Path) -> set[str] | None:
+    """Packages this machine has imported, from migrations/ledger.md. None when there is no ledger."""
+    ledger = root / "migrations" / "ledger.md"
+    if not ledger.is_file():
+        return None
+    found: set[str] = set()
+    for line in ledger.read_text(encoding="utf-8").splitlines():
+        cells = [c.strip() for c in CELL_SPLIT.split(line.strip())[1:-1]]
+        if len(cells) == 8 and cells[1] == "in" and cells[6] in LEDGER_INSTALLED:
+            found.add(cells[2])
+    return found
+
+
+def package_orphan_marker(root: Path) -> list[Finding]:
+    """A marker naming a package this machine has no record of importing."""
+    imported = _ledger_imports(root)
+    if imported is None:
+        return []          # ledger is local and git-ignored — a fresh clone has nothing to judge against
 
     out: list[Finding] = []
     for f, text in _scannable_markdown(root):
-        for package in sorted({p for p, _s, _c, _cl in _owned_regions(text)} - applied):
+        for package in sorted({p for p, _s, _c, _cl in _owned_regions(text)} - imported):
             out.append(
                 Finding("package_orphan_marker", "low", _rel(f, root),
-                        f"`{package}` region is installed, but no package by that name is in migrations/applied/")
+                        f"`{package}` region is installed, but no import of it is recorded in "
+                        f"migrations/ledger.md")
             )
+    return out
+
+
+MANIFEST_ENTRY = re.compile(r'^\s*-\s*\{path:\s*("(?:[^"\\]|\\.)*"),\s*sha:\s*([0-9a-f]{8})\s*\}\s*$')
+
+
+def package_manifest_drift(root: Path) -> list[Finding]:
+    """Whole files or profile sections imported from a package and changed here since.
+    Timelines are skipped: they grow locally by design and always merge on re-import."""
+    out: list[Finding] = []
+    manifests = root / "migrations" / "manifests"
+    if not manifests.is_dir():
+        return out
+    for mf in sorted(manifests.glob("*.yaml")):
+        package = mf.stem
+        for line in mf.read_text(encoding="utf-8").splitlines():
+            entry = MANIFEST_ENTRY.match(line)
+            if not entry:
+                continue
+            target, recorded = json.loads(entry.group(1)), entry.group(2)
+            path, _, heading = target.partition("#")
+            if path.rsplit("/", 1)[-1] == "Timeline.md":
+                continue
+            f = root / path
+            text = f.read_text(encoding="utf-8").replace("\r\n", "\n") if f.is_file() else None
+            if text is not None and heading:
+                text = _heading_section(text, heading)
+            if text is None:
+                out.append(Finding("package_manifest_drift", "low", path,
+                                   f"`{package}` installed {target}, which has been removed here"))
+                continue
+            now = region_sha(_drop_columns(text))
+            if now != recorded:
+                out.append(Finding("package_manifest_drift", "medium", path,
+                                   f"`{package}` {target} was edited here since import — the next "
+                                   f"re-import will conflict (recorded sha:{recorded}, now sha:{now})"))
     return out
 
 
@@ -449,6 +496,7 @@ def run_all(root: Path) -> dict:
         ecosystem_feature_note_drift,
         package_region_drift,
         package_orphan_marker,
+        package_manifest_drift,
         learning_drift,
         complete_features_still_in_development,
         stale_timelines,
