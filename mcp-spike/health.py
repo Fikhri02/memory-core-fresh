@@ -254,6 +254,14 @@ MACHINE_COLUMNS = {"local path", "location"}
 CELL_SPLIT = re.compile(r"(?<!\\)\|")
 
 
+ALIGN_CELL = re.compile(r"^(:?)-+(:?)$")
+
+
+def _norm_separator(cell: str) -> str:
+    sep = ALIGN_CELL.match(cell)
+    return f"{sep.group(1)}---{sep.group(2)}" if sep else cell
+
+
 def _drop_columns(text: str) -> str:
     """Drop machine-bound table columns and normalise cell padding before hashing.
     Mirrors pkgclean.drop_columns(text, MACHINE_COLUMNS, normalise=True)."""
@@ -274,7 +282,7 @@ def _drop_columns(text: str) -> str:
             return [c.strip() for c in CELL_SPLIT.split(line.strip())[1:-1]]
 
         drop = {k for k, c in enumerate(cells(table[0])) if c.lower() in MACHINE_COLUMNS}
-        out += ["| " + " | ".join(c for k, c in enumerate(cells(r)) if k not in drop) + " |"
+        out += ["| " + " | ".join(_norm_separator(c) for k, c in enumerate(cells(r)) if k not in drop) + " |"
                 for r in table]
         i = j
     return "\n".join(out)

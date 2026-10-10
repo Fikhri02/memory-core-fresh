@@ -15,8 +15,17 @@ SOURCE_LINE = re.compile(r"^source:\s*\{.*\}\s*$")
 CELL_SPLIT = re.compile(r"(?<!\\)\|")
 
 
+SEPARATOR_CELL = re.compile(r"^(:?)-+(:?)$")
+
+
 def _cells(line: str) -> list[str]:
     return [c.strip() for c in CELL_SPLIT.split(line.strip())[1:-1]]
+
+
+def _norm_cell(cell: str) -> str:
+    """`------` and `---` are the same separator; keep only the alignment colons."""
+    sep = SEPARATOR_CELL.match(cell)
+    return f"{sep.group(1)}---{sep.group(2)}" if sep else cell
 
 
 def _row(cells: list[str]) -> str:
@@ -46,7 +55,9 @@ def drop_columns(text: str, columns, normalise: bool = False) -> tuple[str, list
         drop = {k for k, c in enumerate(head) if c.lower() in wanted}
         if drop:
             removed += [head[k] for k in sorted(drop)]
-        if drop or normalise:
+        if normalise:
+            out += [_row([_norm_cell(c) for k, c in enumerate(_cells(r)) if k not in drop]) for r in table]
+        elif drop:
             out += [_row([c for k, c in enumerate(_cells(r)) if k not in drop]) for r in table]
         else:
             out += table

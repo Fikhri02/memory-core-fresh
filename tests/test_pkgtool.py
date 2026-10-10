@@ -278,6 +278,31 @@ class Strip(unittest.TestCase):
                          pkgclean.drop_columns(b, (), normalise=True)[0])
 
 
+class SeparatorRows(unittest.TestCase):
+    def test_separator_dash_count_is_normalised(self):
+        a = "| A | B |\n| ------ | :----: |\n| 1 | 2 |\n"
+        b = "| A | B |\n|---|:-:|\n| 1 | 2 |\n"
+        self.assertEqual(pkgclean.drop_columns(a, (), normalise=True)[0],
+                         pkgclean.drop_columns(b, (), normalise=True)[0])
+
+    def test_health_agrees_on_separator_rows(self):
+        text = "| A | Local Path |\n| ------ | :--- |\n| 1 | /x |\n"
+        self.assertEqual(pkgclean.drop_columns(text, pkgclean.MACHINE_COLUMNS, normalise=True)[0],
+                         health._drop_columns(text))
+
+    def test_reimport_after_local_path_readded_with_different_separator(self):
+        import tempfile as _t
+        with _t.TemporaryDirectory() as d:
+            root = Path(d)
+            g = "project-management/w/General.md"
+            stripped = "| Name | Git Origin |\n| ------ | ------------ |\n| w | none |\n"
+            write(root, g, stripped)
+            pkgstate.record(root, "wikipetia@project", 1, "2026-10-10", [g])
+            write(root, g, "| Name | Git Origin | Local Path |\n|---|---|---|\n| w | none | /Users/me/w |\n")
+            h, s = pkg([Section("file", g, stripped)])
+            self.assertEqual("unchanged", pkgstate.plan(root, h, s)[0].action)
+
+
 class Scan(unittest.TestCase):
     def kinds(self, text):
         return [h.kind for h in pkgclean.scan(text)]
