@@ -285,6 +285,27 @@ def region_sha(content: str) -> str:
     return hashlib.sha256(normalised.encode("utf-8")).hexdigest()[:8]
 
 
+HEADING_FENCE = re.compile(r"^(```|~~~)")
+
+
+def _heading_section(text: str, heading: str) -> str | None:
+    """One `## ` section of a Markdown file, heading line included. Mirrors pkgstate.heading_sections."""
+    name: str | None = None
+    buf: list[str] = []
+    in_fence = False
+    for line in text.split("\n"):
+        if HEADING_FENCE.match(line):
+            in_fence = not in_fence
+        if not in_fence and line.startswith("## "):
+            if name == heading:
+                break
+            name, buf = line[3:].strip(), [line]
+            continue
+        if name is not None:
+            buf.append(line)
+    return "\n".join(buf).rstrip("\n") + "\n" if name == heading else None
+
+
 def _scannable_markdown(root: Path):
     for f in sorted(root.rglob("*.md")):
         if PKG_SCAN_SKIP & set(f.relative_to(root).parts):

@@ -14,6 +14,7 @@ sys.path.insert(0, str(REPO / "mcp-spike"))
 
 import health  # noqa: E402
 import pkgformat  # noqa: E402
+import pkgstate  # noqa: E402
 import pkgclean  # noqa: E402
 from pkgformat import PackageError, Section  # noqa: E402
 
@@ -321,6 +322,246 @@ class ProfileHeadings(unittest.TestCase):
 
     def test_empty_names_change_nothing(self):
         self.assertEqual("text", pkgclean.placeholders("text", user="", companion=""))
+
+
+def pkg(sections, **over):
+    """A parsed package: (Header, sections) as plan() takes them."""
+    return pkgformat.read_package(pkgformat.render(header(**over), sections))
+
+
+class HashAgreement(unittest.TestCase):
+    INPUTS = ("", "a", "  a  \n\n", "\n\nline one   \nline two\t\n\n", "ünïcode — dash\n")
+
+    def test_region_sha_matches_health(self):
+        for text in self.INPUTS:
+            self.assertEqual(health.region_sha(text), pkgstate.region_sha(text))
+
+    def test_heading_sections_match_health(self):
+        text = "# T\n\n## A\nbody a\n\n```\n## not a heading\n```\n## B\nbody b\n"
+        sections = pkgstate.heading_sections(text)
+        self.assertEqual(["A", "B"], list(sections))
+        self.assertIn("## not a heading", sections["A"])
+        for name in ("A", "B", "Missing"):
+            self.assertEqual(sections.get(name), health._heading_section(text, name))
+
+
+class PathSafety(unittest.TestCase):
+    def test_unsafe_paths_are_refused(self):
+        for kind, target in (("project", "../x.md"), ("project", "/etc/hosts"),
+                             ("project", "project-management/../../x.md"),
+                             ("project", "project-management/_template/general.md"),
+                             ("project", "context/10-git-rules.md"),
+                             ("project", "project-management\\w\\x.md"),
+                             ("profile", "main/notes.md"),
+                             ("profile", "project-management/w/General.md"),
+                             ("ecosystem", "main/main-memory.md")):
+            with self.assertRaises(PackageError, msg=target):
+                pkgstate.check_target(kind, target)
+
+    def test_allowed_paths_pass(self):
+        for kind, target in (("project", "project-management/w/General.md"),
+                             ("project", "project-plans/active/w.md"),
+                             ("project", "debugging/open/w-crash.md"),
+                             ("ecosystem", "ecosystem/acme/map.md"),
+                             ("profile", "main/main-memory.md#Core Purpose"),
+                             ("profile", "main/preferences.md")):
+            pkgstate.check_target(kind, target)
+
+    def test_plan_refuses_a_traversal_section_before_reading_anything(self):
+        h, s = pkg([Section("file", "../../.ssh/authorized_keys", "ssh-rsa AAA\n")])
+        with self.assertRaisesRegex(PackageError, "unsafe"):
+            pkgstate.plan(Path("/nonexistent"), h, s)
+
+
+class Manifests(TempRoot):
+    def test_round_trip_with_awkward_paths(self):
+        m = pkgstate.Manifest("profile@irfan", 2, "2026-10-12",
+                              {'main/main-memory.md#Terms "of" Address': "1a2b3c4d",
+                               "main/preferences.md": "5e6f7a8b"})
+        path = pkgstate.manifest_path(self.root, "profile@irfan")
+        pkgstate.write_manifest(path, m)
+        self.assertEqual(m, pkgstate.read_manifest(path))
+
+    def test_missing_manifest_is_none(self):
+        self.assertIsNone(pkgstate.read_manifest(self.root / "nope.yaml"))
+
+    def test_record_refuses_a_missing_target(self):
+        with self.assertRaisesRegex(PackageError, "does not exist"):
+            pkgstate.record(self.root, "w@project", 1, "2026-10-10", ["project-management/w/General.md"])
+
+
+class Plan(TempRoot):
+    G = "project-management/w/General.md"
+
+    def install(self, content="# W\n", version=1):
+        """Simulate a completed import: write the file and record it."""
+        write(self.root, self.G, content)
+        pkgstate.record(self.root, "wikipetia@project", version, "2026-10-10", [self.G])
+
+    def actions(self, content, version=1, renames=None):
+        h, s = pkg([Section("file", self.G, content)], version=version)
+        return [(i.action, i.target) for i in pkgstate.plan(self.root, h, s, renames)]
+
+    def test_new_when_absent(self):
+        self.assertEqual([("new", self.G)], self.actions("# W\n"))
+
+    def test_unchanged_after_install(self):
+        self.install()
+        self.assertEqual([("unchanged", self.G)], self.actions("# W\n"))
+
+    def test_update_when_newer_and_untouched(self):
+        self.install()
+        self.assertEqual([("update", self.G)], self.actions("# W v2\n", version=2))
+
+    def test_conflict_when_edited_locally(self):
+        self.install()
+        write(self.root, self.G, "# W — edited here\n")
+        h, s = pkg([Section("file", self.G, "# W v2\n")], version=2)
+        item = pkgstate.plan(self.root, h, s)[0]
+        self.assertEqual("conflict", item.action)
+        self.assertIn("edited here", item.reason)
+
+    def test_conflict_when_present_without_record(self):
+        write(self.root, self.G, "# W — documented here first\n")
+        self.assertEqual([("conflict", self.G)], self.actions("# W\n"))
+
+    def test_skip_older(self):
+        self.install(version=3)
+        self.assertEqual([("skip-older", self.G)], self.actions("# W v2\n", version=2))
+
+    def test_same_version_different_content_is_a_conflict(self):
+        self.install()
+        self.assertEqual([("conflict", self.G)], self.actions("# W but different\n", version=1))
+
+    def test_local_path_column_added_after_import_is_not_an_edit(self):
+        stripped = "| Repo | Git Origin |\n|---|---|\n| api | https://x/api.git |\n"
+        self.install(stripped)
+        write(self.root, self.G, "| Repo | Git Origin | Local Path |\n|---|---|---|\n"
+                                 "| api | https://x/api.git | /Users/me/api |\n")
+        self.assertEqual([("unchanged", self.G)], self.actions(stripped))
+
+    def test_timeline_merges_and_reports_unchanged_when_nothing_new(self):
+        t = "project-management/w/Timeline.md"
+        write(self.root, t, "# T\n\n## 2026-10-02\n- local\n\n## 2026-10-01\n- shared\n")
+        h, s = pkg([Section("file", t, "# T\n\n## 2026-10-03\n- new\n\n## 2026-10-01\n- shared\n")])
+        self.assertEqual("merge-timeline", pkgstate.plan(self.root, h, s)[0].action)
+        h, s = pkg([Section("file", t, "# T\n\n## 2026-10-01\n- shared\n")])
+        self.assertEqual("unchanged", pkgstate.plan(self.root, h, s)[0].action)
+
+    def test_rename_moves_targets_and_links(self):
+        h, s = pkg([Section("file", self.G, "# W\n"),
+                    Section("link", "project-management/w/Plans/a.md -> project-plans/active/a.md", "")])
+        items = pkgstate.plan(self.root, h, s, {"project-management/w": "project-management/w2"})
+        self.assertEqual(["project-management/w2/General.md",
+                          "project-management/w2/Plans/a.md -> project-plans/active/a.md"],
+                         [i.target for i in items])
+        self.assertEqual("link", items[1].action)
+
+    def test_feature_packages_are_refused(self):
+        h, s = pkgformat.read_package(FORMAT1)
+        with self.assertRaisesRegex(PackageError, "in-file markers"):
+            pkgstate.plan(self.root, h, s)
+
+    def test_profile_sections_are_planned_per_heading(self):
+        write(self.root, "main/main-memory.md", "# V\n\n## Core Purpose\nHelp.\n\n## Usage Notes\nOld.\n")
+        h, s = pkg([Section("section", "main/main-memory.md#Core Purpose", "## Core Purpose\nHelp.\n"),
+                    Section("section", "main/main-memory.md#Time Intelligence", "## Time Intelligence\nT.\n")],
+                   kind="profile", package="profile@irfan")
+        self.assertEqual(["unchanged", "new"], [i.action for i in pkgstate.plan(self.root, h, s)])
+
+
+class WriteTarget(TempRoot):
+    def test_whole_file(self):
+        pkgstate.write_target(self.root, "project-management/w/General.md", "# W\n")
+        self.assertEqual("# W\n", (self.root / "project-management/w/General.md").read_text())
+
+    def test_section_replaced_in_place(self):
+        write(self.root, "main/main-memory.md", "# V\n\n## A\nold\n\n## B\nkeep\n")
+        pkgstate.write_target(self.root, "main/main-memory.md#A", "## A\nnew\n")
+        self.assertEqual("# V\n\n## A\nnew\n\n## B\nkeep\n",
+                         (self.root / "main/main-memory.md").read_text())
+
+    def test_missing_section_appended(self):
+        write(self.root, "main/main-memory.md", "# V\n\n## A\nold\n")
+        pkgstate.write_target(self.root, "main/main-memory.md#C", "## C\nnew\n")
+        self.assertEqual("# V\n\n## A\nold\n\n## C\nnew\n",
+                         (self.root / "main/main-memory.md").read_text())
+
+    def test_find_section_honours_renames(self):
+        sections = [Section("file", "project-management/w/General.md", "g\n")]
+        found = pkgstate.find_section(sections, "project-management/w2/General.md",
+                                      {"project-management/w": "project-management/w2"})
+        self.assertEqual("g\n", found.content)
+        with self.assertRaisesRegex(PackageError, "no section"):
+            pkgstate.find_section(sections, "project-management/w/Design.md")
+
+
+class TimelineMerge(unittest.TestCase):
+    def test_newest_first_insertion(self):
+        local = "# T\n\n## 2026-10-03\n- c\n\n## 2026-10-01\n- a\n"
+        incoming = "# T\n\n## 2026-10-04\n- d\n\n## 2026-10-02\n- b\n\n## 2026-10-01\n- a\n"
+        self.assertEqual("# T\n\n## 2026-10-04\n- d\n\n## 2026-10-03\n- c\n\n## 2026-10-02\n- b\n\n"
+                         "## 2026-10-01\n- a\n", pkgstate.merge_timeline(local, incoming))
+
+    def test_oldest_first_insertion(self):
+        local = "# T\n\n## 2026-10-01\n- a\n\n## 2026-10-03\n- c\n"
+        incoming = "## 2026-10-02\n- b\n"
+        self.assertEqual("# T\n\n## 2026-10-01\n- a\n\n## 2026-10-02\n- b\n\n## 2026-10-03\n- c\n",
+                         pkgstate.merge_timeline(local, incoming))
+
+    def test_suffixed_headers_are_distinct(self):
+        local = "## 2026-09-05\n- first\n"
+        incoming = "## 2026-09-05 (session 2)\n- second\n\n## 2026-09-05\n- first, other wording\n"
+        merged = pkgstate.merge_timeline(local, incoming)
+        self.assertEqual(1, merged.count("## 2026-09-05\n"))
+        self.assertIn("## 2026-09-05 (session 2)", merged)
+        self.assertIn("- first\n", merged)
+        self.assertNotIn("other wording", merged)
+
+    def test_nothing_new_returns_local_exactly(self):
+        local = "# T\n\n## 2026-10-01\n- a   \n\n\n"
+        self.assertIs(local, pkgstate.merge_timeline(local, "## 2026-10-01\n- a\n"))
+
+    def test_local_without_dates_gets_incoming_appended(self):
+        self.assertEqual("# T\n\n## 2026-10-01\n- a\n",
+                         pkgstate.merge_timeline("# T\n", "## 2026-10-01\n- a\n"))
+
+
+class Ledger(TempRoot):
+    def append(self, **over):
+        row = dict(date="2026-10-10", direction="out", package="wikipetia@project", kind="project",
+                   audience="self", version=1, result="written", note="out/wikipetia@project.v1.pkg.md")
+        row.update(over)
+        return pkgstate.append_ledger(self.root, **row)
+
+    def test_first_append_creates_the_header(self):
+        self.append()
+        text = pkgstate.ledger_path(self.root).read_text()
+        self.assertTrue(text.startswith("# Migration Ledger"))
+        self.assertIn("| Date | Dir | Package | Kind | Audience | Ver | Result | Note |", text)
+        self.assertEqual(1, len(pkgstate.ledger_rows(self.root)))
+
+    def test_rows_round_trip_with_pipes_in_notes(self):
+        self.append()
+        self.append(direction="in", result="partial", note="2 placed | api not here\nsecond line")
+        rows = pkgstate.ledger_rows(self.root)
+        self.assertEqual(["out", "in"], [r["dir"] for r in rows])
+        self.assertEqual("2 placed | api not here second line", rows[1]["note"])
+
+    def test_invalid_result_for_direction_is_refused(self):
+        with self.assertRaisesRegex(PackageError, "not valid"):
+            self.append(direction="out", result="applied")
+        with self.assertRaisesRegex(PackageError, "direction"):
+            self.append(direction="sideways")
+
+    def test_next_version_reads_out_folder_ledger_and_legacy_files(self):
+        self.assertEqual(1, pkgstate.next_version(self.root, "wikipetia@project"))
+        write(self.root, "migrations/out/wikipetia@project.v2.pkg.md", "x")
+        self.assertEqual(3, pkgstate.next_version(self.root, "wikipetia@project"))
+        self.append(version=5)
+        self.assertEqual(6, pkgstate.next_version(self.root, "wikipetia@project"))
+        write(self.root, "migrations/out/dep@acme.pkg.md", "---\npackage: dep@acme\nversion: 4\n---\n")
+        self.assertEqual(5, pkgstate.next_version(self.root, "dep@acme"))
 
 
 if __name__ == "__main__":
