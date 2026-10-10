@@ -249,6 +249,36 @@ CODE_FENCE = re.compile(r"^```.*?^```", re.M | re.S)
 PKG_SCAN_SKIP = {".git", ".venv", "__pycache__", "node_modules", "migrations"}
 
 
+MACHINE_COLUMNS = {"local path", "location"}
+CELL_SPLIT = re.compile(r"(?<!\\)\|")
+
+
+def _drop_columns(text: str) -> str:
+    """Drop machine-bound table columns and normalise cell padding before hashing.
+    Mirrors pkgclean.drop_columns(text, MACHINE_COLUMNS, normalise=True)."""
+    lines = text.split("\n")
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        if not lines[i].lstrip().startswith("|"):
+            out.append(lines[i])
+            i += 1
+            continue
+        j = i
+        while j < len(lines) and lines[j].lstrip().startswith("|"):
+            j += 1
+        table = lines[i:j]
+
+        def cells(line: str) -> list[str]:
+            return [c.strip() for c in CELL_SPLIT.split(line.strip())[1:-1]]
+
+        drop = {k for k, c in enumerate(cells(table[0])) if c.lower() in MACHINE_COLUMNS}
+        out += ["| " + " | ".join(c for k, c in enumerate(cells(r)) if k not in drop) + " |"
+                for r in table]
+        i = j
+    return "\n".join(out)
+
+
 def region_sha(content: str) -> str:
     """Hash of a region's content, insensitive to trailing whitespace and surrounding blank lines."""
     normalised = "\n".join(line.rstrip() for line in content.strip().splitlines())

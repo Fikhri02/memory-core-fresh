@@ -14,6 +14,7 @@ sys.path.insert(0, str(REPO / "mcp-spike"))
 
 import health  # noqa: E402
 import pkgformat  # noqa: E402
+import pkgclean  # noqa: E402
 from pkgformat import PackageError, Section  # noqa: E402
 
 
@@ -209,6 +210,117 @@ class PackStaging(TempRoot):
     def test_invalid_header_is_never_emitted(self):
         with self.assertRaisesRegex(PackageError, "`kind`"):
             pkgformat.pack_staging(header(kind="team"), self.root)
+
+
+GENERAL = """# W
+
+## Repositories
+
+| Repo | Git Origin | Local Path |
+|------|-----------|------------|
+| api | https://github.com/x/api.git | /Users/fikhri/Projects/api |
+
+<!-- pkg:dep@acme v2 sha:ab12cd34 -->
+- owned
+<!-- /pkg:dep@acme -->
+"""
+
+MAP_TABLE = """## Members
+
+| Project | Role | Documented | Location |
+|---------|------|-----------|----------|
+| Admin | admin | `acme-admin` | → General.md |
+| API | backend | — | _(not on this machine)_ |
+"""
+
+
+class Strip(unittest.TestCase):
+    def test_local_path_column_and_markers_are_removed(self):
+        text, removed = pkgclean.strip(GENERAL)
+        self.assertNotIn("Local Path", text)
+        self.assertNotIn("/Users/", text)
+        self.assertNotIn("pkg:", text)
+        self.assertIn("- owned", text)
+        self.assertIn("| api | https://github.com/x/api.git |", text)
+        self.assertEqual(3, len(removed))
+
+    def test_location_column_only_when_asked(self):
+        kept, _ = pkgclean.strip(MAP_TABLE)
+        self.assertIn("Location", kept)
+        text, _ = pkgclean.strip(MAP_TABLE, ("Local Path", "Location"))
+        self.assertNotIn("Location", text)
+        self.assertNotIn("not on this machine", text)
+        self.assertIn("| Admin | admin | `acme-admin` |", text)
+
+    def test_absence_marker_outside_a_table_is_removed(self):
+        text, removed = pkgclean.strip("- API _(not on this machine)_\n")
+        self.assertEqual("- API\n", text)
+        self.assertEqual(["absence marker"], removed)
+
+    def test_import_provenance_line_is_removed(self):
+        text, _ = pkgclean.strip("---\nfeature: dep\nsource: {package: dep@acme, version: 2, sha: ab12cd34}\n---\n")
+        self.assertNotIn("source:", text)
+
+    def test_untouched_text_is_returned_exactly(self):
+        plain = "# Plain\n\n| A | B |\n|---|---|\n|  1 |2|\n"
+        self.assertEqual((plain, []), pkgclean.strip(plain))
+
+    def test_drop_columns_agrees_with_health(self):
+        for text in (GENERAL, MAP_TABLE, "no table\n"):
+            self.assertEqual(pkgclean.drop_columns(text, pkgclean.MACHINE_COLUMNS, normalise=True)[0],
+                             health._drop_columns(text))
+
+    def test_normalise_ignores_cell_padding(self):
+        a = "| A | B |\n|---|---|\n| 1 | 2 |\n"
+        b = "|A|B|\n| --- | --- |\n|  1 |2|\n"
+        self.assertEqual(pkgclean.drop_columns(a, (), normalise=True)[0],
+                         pkgclean.drop_columns(b, (), normalise=True)[0])
+
+
+class Scan(unittest.TestCase):
+    def kinds(self, text):
+        return [h.kind for h in pkgclean.scan(text)]
+
+    def test_email_is_found(self):
+        self.assertEqual(["email"], self.kinds("reach me at jamla@example.com today"))
+
+    def test_git_origin_is_not_an_email(self):
+        self.assertEqual([], self.kinds("origin git@github.com:Fikhri02/memory-core.git"))
+
+    def test_phone_is_found_but_dates_and_shas_are_not(self):
+        self.assertEqual(["phone"], self.kinds("call +60 12-345 6789"))
+        self.assertEqual([], self.kinds("## 2026-10-10 — sha ab12cd34, 20260910"))
+
+    def test_tokens_and_secrets_are_found(self):
+        self.assertEqual(["token"], self.kinds("key sk-abcdefghijklmnop1234"))
+        self.assertEqual(["token"], self.kinds("ghp_" + "a1" * 12))
+        self.assertEqual(["secret"], self.kinds("API_KEY=supersecretvalue"))
+
+    def test_home_paths_are_found(self):
+        self.assertEqual(["home-path"], self.kinds("cd /Users/fikhri/Projects/api"))
+        self.assertEqual(["home-path"], self.kinds("see /home/irfan/notes"))
+
+    def test_clean_text_has_no_hits_and_lines_are_numbered(self):
+        self.assertEqual([], pkgclean.scan("# Title\n\nNothing personal here.\n"))
+        self.assertEqual(2, pkgclean.scan("fine\nmail jamla@example.com\n")[0].line)
+
+
+class ProfileHeadings(unittest.TestCase):
+    def test_classification(self):
+        cases = {"Violet Profile": "companion", "Communication Style": "companion",
+                 "Core Purpose ": "companion", "Jamla Profile": "user",
+                 "Identity & Relationship": "user", "Relationship Context": "user",
+                 "Something New": "user"}
+        for heading, expected in cases.items():
+            self.assertEqual(expected, pkgclean.classify_profile_heading(heading, "Violet"), heading)
+
+    def test_placeholders_replace_whole_names_only(self):
+        self.assertEqual("{{USER_NAME}}'s companion {{COMPANION_NAME}}. Violetta stays.",
+                         pkgclean.placeholders("Jamla's companion Violet. Violetta stays.",
+                                               user="Jamla", companion="Violet"))
+
+    def test_empty_names_change_nothing(self):
+        self.assertEqual("text", pkgclean.placeholders("text", user="", companion=""))
 
 
 if __name__ == "__main__":
