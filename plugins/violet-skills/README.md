@@ -20,8 +20,8 @@ Auto-triggered skills for the memory-core AI companion.
 | `sync-git` | "sync git", "update from git", after a merge/pull/new branch | Syncs commits into the feature Log and project Timeline, attributed per author; proposes task and completion updates |
 | `manage-ecosystem` | "new ecosystem", "add to ecosystem", "list ecosystems" | Maps which projects belong together, how they relate, and which domains span several — warns before cross-project features |
 | `document-ecosystem-feature` | "document feature [X] across [ecosystem]", "document shared domain" | Documents one feature across every ecosystem member — one cross-repo note plus a repo-scoped Overview per member |
-| `package-ecosystem-feature` | "package feature [X]", "export feature [X]" | Packages one documented feature into a single portable file under `migrations/out/`, machine-bound paths stripped |
-| `unpackage-ecosystem-feature` | "unpackage feature [X]", "import feature [X]" | Imports a packaged feature, creating the ecosystem if absent and asking where each member repo lives; never creates project entries |
+| `export-package` | "export [name]", "export my profile", "package feature [X]" | Packages a project, ecosystem, feature or the companion profile into one labelled file under `migrations/out/`, for yourself (self) or someone else (share); records it in the local ledger |
+| `import-package` | "import [name]", "import migration", "migration log" | Reads the package's kind and audience, checks every path, plans before writing, never overwrites local edits; records it in the local ledger |
 | `forge-skill` | "create skill", "level up", "self improve", auto-detect pattern (3+) | Proposes new skills and level-ups based on detected patterns (human-in-the-loop) |
 | *(time-aware)* | Session start (auto) | Built into main-memory — time-of-day adaptive greetings and behavior |
 

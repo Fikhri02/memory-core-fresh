@@ -1238,127 +1238,100 @@ skills:
       1: "Base: ecosystem-scoped feature documentation with participation as a recorded finding"
 
   # ---------------------------------------------------------------------------
-  package-ecosystem-feature:
+  export-package:
     description: >
-      Use when user says 'package feature [X]', 'package ecosystem feature', or
-      'export feature [X]'. Packages one documented ecosystem feature — its cross-repo
-      note, the map entries that place it, and each member's Overview and Components
-      line — into a single portable file under migrations/out/, machine-bound paths
-      stripped.
+      Use when user says 'export [name]', 'package [name]', 'export my profile',
+      'package feature [X]' or 'export feature [X]'. Packages a project, an ecosystem,
+      one ecosystem feature, or the companion profile into one labelled file under
+      migrations/out/ — for yourself (self) or someone else (share, personal data
+      stripped) — and records it in the local migration ledger.
     tier: on_demand
     level: 1
     triggers:
-      explicit: ["package feature", "package ecosystem feature", "export feature"]
+      explicit: ["export", "package", "export my profile", "package feature", "export feature", "package ecosystem feature", "export ecosystem feature"]
       passive: none
-    activation_message: "_(package-ecosystem-feature activates)_"
-    commands:
-      package:
-        triggers: ["package feature", "export feature"]
-        protocol:
-          - step: 1
-            action: check
-            description: >
-              Resolve ecosystem and feature. The note at ecosystem/{slug}/features/{feature}.md
-              must exist — if not, hand off to document-ecosystem-feature and stop. Never
-              package an undocumented feature
-          - step: 2
-            action: read
-            target: "ecosystem/{slug}/features/{feature}.md"
-            description: >
-              Read members and non_members from the note frontmatter — the only source of
-              membership. Per member collect the Overview body, the Components.md line, and
-              git_origin from General.md Repositories
-          - step: 3
-            action: read
-            target: "ecosystem/{slug}/map.md"
-            description: >
-              Collect the Shared Domains entry, the Relations naming these members, and the
-              Cross-Project Rules naming this feature
-          - step: 4
-            action: ask
-            description: >
-              Show the manifest — every section, every member, every field stripped, anything
-              missing. Wait; nothing is written until it is confirmed
-          - step: 5
-            action: write
-            target: "migrations/out/{feature}@{slug}.pkg.md"
-            description: >
-              Single self-contained file per migrations/README.md. Bump version if a package
-              for this feature already exists there
+    activation_message: "_(export-package activates)_"
+    protocol:
+      - step: 1
+        action: resolve
+        description: >
+          Resolve the kind from the name — project, ecosystem, feature, or profile. One
+          match is used and announced; several or none asks. Never guess
+      - step: 2
+        action: ask
+        description: "Ask the audience: self (another machine of yours) or share (someone else). No default"
+      - step: 3
+        action: collect
+        target: "migrations/.staging/{id}/"
+        description: >
+          Follow import-package/kinds/{kind}.md Export — collect: stage files, strip machine-bound
+          data with pkgtool strip, and for share run pkgtool scan
+      - step: 4
+        action: ask
+        description: >
+          Show the manifest — files, everything stripped and why, gaps, scan hits for share. Wait;
+          nothing is written before it is confirmed
+      - step: 5
+        action: write
+        target: "migrations/out/{id}.v{n}.pkg.md"
+        description: "pkgtool pack, then pkgtool log --dir out --result written; delete staging"
     rules:
-      - "Membership comes from the note frontmatter — never the map, never inferred"
-      - "Never package an undocumented feature — the note is the payload"
-      - "Local Path, absence markers and existing pkg markers are stripped; git_origin travels instead"
-      - "Timeline.md and anything under main/ never travel"
-      - "Bump version on every export — it is what lets re-import tell an update from a no-op"
-      - "Never write on reconnaissance alone"
+      - "The kind is resolved, never guessed; the audience is asked every time"
+      - "Nothing is written before the manifest is confirmed"
+      - "Exports are never overwritten — each is a new version file"
+      - "Local Path, the map Location column, absence and package markers never travel; git_origin does"
+      - "brain/, notes/, learning/, career/ and context/ never travel"
+      - "Never package an undocumented feature"
+      - "Every export is a row in migrations/ledger.md (local, git-ignored)"
     level_history:
-      1: "Base: single-feature packaging with machine-bound data stripped and versioned re-export"
+      1: "Base: four kinds, self/share audience, versioned exports, pkgtool packing, local ledger. Replaces package-ecosystem-feature"
 
   # ---------------------------------------------------------------------------
-  unpackage-ecosystem-feature:
+  import-package:
     description: >
-      Use when user says 'unpackage feature [X]', 'import feature [X]', or 'import
-      migration'. Imports one packaged ecosystem feature into this memory-core — creating
-      the ecosystem if absent, asking where each member repo lives, and replacing only the
-      regions the package owns. Never creates project entries.
+      Use when user says 'import [name]', 'unpackage [name]', 'import migration',
+      'import feature [X]', 'unpackage feature [X]', or 'migration log'. Reads a
+      package's kind and audience label and places a project, an ecosystem, a feature
+      or the profile into this memory-core — asking before writing, never overwriting
+      local edits — and records it in the local migration ledger.
     tier: on_demand
     level: 1
     triggers:
-      explicit: ["unpackage feature", "unpackage ecosystem feature", "import feature", "import migration"]
+      explicit: ["import", "unpackage", "import migration", "import feature", "unpackage feature", "unpackage ecosystem feature", "migration log", "list migrations"]
       passive: on_pending_package_in_migrations_in
-    activation_message: "_(unpackage-ecosystem-feature activates)_"
-    commands:
-      unpackage:
-        triggers: ["unpackage feature", "import feature", "import migration"]
-        protocol:
-          - step: 1
-            action: check
-            description: >
-              Locate the package in migrations/in/ or by name; ask if several are pending.
-              Validate frontmatter and refuse a malformed package naming the bad field —
-              a half-applied package is worse than none
-          - step: 2
-            action: check
-            target: "ecosystem/{slug}/map.md"
-            description: >
-              Use the ecosystem if it exists; if absent, plan to create map.md from the
-              package ecosystem and members blocks. That is the designed path, not a fallback
-          - step: 3
-            action: ask
-            description: >
-              Per member, ask where that repo lives on this machine, showing git_origin.
-              Repo present with a project entry places the Overview; present without one is
-              flagged for document-project; absent is marked _(not on this machine)_ in the
-              map. Never scaffold a project entry, never invent a path
-          - step: 4
-            action: ask
-            description: >
-              Show every file to be written, every region to be replaced, every absence to be
-              marked and every conflict found. Wait
-          - step: 5
-            action: write
-            target: "ecosystem/{slug}/features/{feature}.md"
-            description: >
-              Wholly owned — write source: into the frontmatter. Compare sha before writing:
-              a differing hash means local edits and always stops to ask
-          - step: 6
-            action: write
-            target: "ecosystem/{slug}/map.md"
-            description: >
-              Created from the package if absent, else owned regions replaced under their
-              markers; bump updated:. Then per placeable member the Overview and Components
-              line, and move the package from migrations/in/ to migrations/applied/
+    activation_message: "_(import-package activates)_"
+    protocol:
+      - step: 1
+        action: check
+        description: >
+          Locate the package; pkgtool validate. A malformed package is refused whole and logged
+          as refused. Read import-package/kinds/{kind}.md
+      - step: 2
+        action: ask
+        description: >
+          Self package: confirm this is the user's own install, showing source_install; if not,
+          offer a share import with personal sections skipped
+      - step: 3
+        action: ask
+        description: >
+          Resolve targets and renames, run pkgtool plan (not for feature), show every action,
+          conflict, rename and absence. Wait
+      - step: 4
+        action: write
+        description: >
+          Follow the kind file's Import — place; resolve each conflict with the user; pkgtool record
+          only written or unchanged targets; move the package to migrations/applied/; pkgtool log
+          --dir in with applied, no-op, partial or conflict-resolved
     rules:
-      - "Import never creates a project entry — document-project owns that boundary"
-      - "Import never invents a local path — it asks, and 'not here' is recorded"
-      - "Never overwrite a locally edited region — a hash mismatch always stops and asks"
-      - "Only owned regions are touched; everything outside a marker belongs to this machine"
-      - "Creating the ecosystem is in scope; inventing members is not"
-      - "Never write on reconnaissance alone"
+      - "kind and audience come from the package header — never inferred"
+      - "A malformed package is refused whole; nothing is written before the plan is confirmed"
+      - "A conflict always stops and asks — local edits are never overwritten"
+      - "Paths are checked first: no absolute paths, no .., no infrastructure folders, only the kind's roots"
+      - "Feature imports never create project entries; project and ecosystem imports may, after confirmation"
+      - "Never record a kept-local file; every import attempt is a ledger row"
       - "Never mark work Completed — status is the user's call"
     level_history:
-      1: "Base: single-feature import with ecosystem creation, interactive member location, and hash-guarded re-import"
+      1: "Base: label-routed import of four kinds, audience check, path-safe plan, manifest re-import, timeline merge, ledger and migration log. Replaces unpackage-ecosystem-feature"
 
   # ---------------------------------------------------------------------------
   start-learning:

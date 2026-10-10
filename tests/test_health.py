@@ -1,5 +1,6 @@
 """Tests for mcp-spike/health.py. Stdlib only — health.py is dependency-free by design."""
 
+import json
 import sys
 import tempfile
 import unittest
@@ -193,6 +194,14 @@ class PackageRegionDrift(unittest.TestCase):
         self.assertRegex(s, r"^[0-9a-f]{8}$")
 
 
+LEDGER = """# Migration Ledger
+
+| Date | Dir | Package | Kind | Audience | Ver | Result | Note |
+|------|-----|---------|------|----------|-----|--------|------|
+{rows}
+"""
+
+
 class PackageOrphanMarker(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -201,20 +210,89 @@ class PackageOrphanMarker(unittest.TestCase):
         write(self.root, "ecosystem/acme/map.md",
               MARKED_MAP.format(sha=health.region_sha(REGION), region=REGION))
 
-    def test_marker_with_no_applied_record_is_orphan(self):
-        (self.root / "migrations" / "applied").mkdir(parents=True)
+    def ledger(self, *rows):
+        write(self.root, "migrations/ledger.md", LEDGER.format(rows="\n".join(rows)))
+
+    def test_no_ledger_is_not_an_error(self):
+        # Ledger and packages are git-ignored; a fresh clone has nothing to judge against.
+        write(self.root, "migrations/applied/.gitkeep", "")
+        self.assertEqual([], health.package_orphan_marker(self.root))
+
+    def test_marker_with_an_import_row_is_clean(self):
+        self.ledger("| 2026-09-03 | in | dep@acme | feature | share | 2 | applied | |")
+        self.assertEqual([], health.package_orphan_marker(self.root))
+
+    def test_partial_and_resolved_imports_count(self):
+        for result in ("partial", "conflict-resolved"):
+            self.ledger(f"| 2026-09-03 | in | dep@acme | feature | share | 2 | {result} | |")
+            self.assertEqual([], health.package_orphan_marker(self.root), result)
+
+    def test_marker_without_an_import_row_is_orphan(self):
+        self.ledger("| 2026-09-03 | out | dep@acme | feature | share | 2 | written | |",
+                    "| 2026-09-04 | in | dep@acme | feature | share | 3 | refused | bad field |")
         findings = health.package_orphan_marker(self.root)
         self.assertEqual(1, len(findings))
         self.assertEqual("package_orphan_marker", findings[0].check)
         self.assertIn("dep@acme", findings[0].detail)
+        self.assertIn("ledger", findings[0].detail)
 
-    def test_marker_with_applied_record_is_clean(self):
-        write(self.root, "migrations/applied/dep@acme.pkg.md", "---\npackage: dep@acme\n---\n")
-        self.assertEqual([], health.package_orphan_marker(self.root))
 
-    def test_no_migrations_folder_is_not_an_error(self):
-        # Nothing to judge against: a package may have been applied by hand.
-        self.assertEqual([], health.package_orphan_marker(self.root))
+MANIFEST = """package: w@project
+version: 1
+imported: 2026-10-10
+entries:
+{entries}
+"""
+
+
+class PackageManifestDrift(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+
+    def install(self, target, text, on_disk=None):
+        path = target.partition("#")[0]
+        write(self.root, path, on_disk if on_disk is not None else text)
+        sha = health.region_sha(health._drop_columns(text, path))
+        write(self.root, "migrations/manifests/w@project.yaml",
+              MANIFEST.format(entries=f'  - {{path: {json.dumps(target)}, sha: {sha}}}'))
+
+    def test_untouched_install_is_clean(self):
+        self.install("project-management/w/General.md", "# W\n")
+        self.assertEqual([], health.package_manifest_drift(self.root))
+
+    def test_edited_file_is_medium(self):
+        self.install("project-management/w/General.md", "# W\n", on_disk="# W edited\n")
+        findings = health.package_manifest_drift(self.root)
+        self.assertEqual([("package_manifest_drift", "medium")], [(f.check, f.severity) for f in findings])
+        self.assertIn("w@project", findings[0].detail)
+
+    def test_removed_file_is_low(self):
+        self.install("project-management/w/General.md", "# W\n")
+        (self.root / "project-management/w/General.md").unlink()
+        findings = health.package_manifest_drift(self.root)
+        self.assertEqual([("package_manifest_drift", "low")], [(f.check, f.severity) for f in findings])
+
+    def test_timeline_growth_is_never_drift(self):
+        self.install("project-management/w/Timeline.md", "## 2026-10-01\n",
+                     on_disk="## 2026-10-02\n\n## 2026-10-01\n")
+        self.assertEqual([], health.package_manifest_drift(self.root))
+
+    def test_local_path_column_is_not_drift(self):
+        self.install("project-management/w/General.md", "| Repo |\n|---|\n| api |\n",
+                     on_disk="| Repo | Local Path |\n|---|---|\n| api | /Users/me/api |\n")
+        self.assertEqual([], health.package_manifest_drift(self.root))
+
+    def test_profile_section_edit_is_drift(self):
+        self.install("main/main-memory.md#Core Purpose", "## Core Purpose\nHelp.\n",
+                     on_disk="# V\n\n## Core Purpose\nHelp more.\n")
+        self.assertEqual(1, len(health.package_manifest_drift(self.root)))
+
+    def test_run_all_includes_manifest_drift(self):
+        self.install("project-management/w/General.md", "# W\n", on_disk="# W edited\n")
+        checks = {f["check"] for f in health.run_all(self.root)["findings"]}
+        self.assertIn("package_manifest_drift", checks)
 
 
 PROGRESS = """# Keycloak — Progress

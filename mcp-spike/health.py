@@ -14,6 +14,7 @@ Dependency-free on purpose: the YAML scan is a line match, not a parse.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from dataclasses import dataclass, asdict
 from datetime import date
@@ -249,10 +250,73 @@ CODE_FENCE = re.compile(r"^```.*?^```", re.M | re.S)
 PKG_SCAN_SKIP = {".git", ".venv", "__pycache__", "node_modules", "migrations"}
 
 
+MACHINE_COLUMNS = {"local path", "location"}
+CELL_SPLIT = re.compile(r"(?<!\\)\|")
+
+
+ALIGN_CELL = re.compile(r"^(:?)-+(:?)$")
+
+
+def _norm_separator(cell: str) -> str:
+    sep = ALIGN_CELL.match(cell)
+    return f"{sep.group(1)}---{sep.group(2)}" if sep else cell
+
+
+MAP_PATH = re.compile(r"^ecosystem/[^/]+/map\.md$")
+
+
+def _drop_columns(text: str, path: str = "") -> str:
+    """Drop machine-bound table columns and normalise cell padding before hashing. Mirrors
+    pkgstate.comparable: `Location` is machine-bound only in an ecosystem map."""
+    machine = MACHINE_COLUMNS if MAP_PATH.match(path) else {"local path"}
+    lines = text.split("\n")
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        if not lines[i].lstrip().startswith("|"):
+            out.append(lines[i])
+            i += 1
+            continue
+        j = i
+        while j < len(lines) and lines[j].lstrip().startswith("|"):
+            j += 1
+        table = lines[i:j]
+
+        def cells(line: str) -> list[str]:
+            return [c.strip() for c in CELL_SPLIT.split(line.strip())[1:-1]]
+
+        drop = {k for k, c in enumerate(cells(table[0])) if c.lower() in machine}
+        out += ["| " + " | ".join(_norm_separator(c) for k, c in enumerate(cells(r)) if k not in drop) + " |"
+                for r in table]
+        i = j
+    return "\n".join(out)
+
+
 def region_sha(content: str) -> str:
     """Hash of a region's content, insensitive to trailing whitespace and surrounding blank lines."""
     normalised = "\n".join(line.rstrip() for line in content.strip().splitlines())
     return hashlib.sha256(normalised.encode("utf-8")).hexdigest()[:8]
+
+
+HEADING_FENCE = re.compile(r"^(```|~~~)")
+
+
+def _heading_section(text: str, heading: str) -> str | None:
+    """One `## ` section of a Markdown file, heading line included. Mirrors pkgstate.heading_sections."""
+    name: str | None = None
+    buf: list[str] = []
+    in_fence = False
+    for line in text.split("\n"):
+        if HEADING_FENCE.match(line):
+            in_fence = not in_fence
+        if not in_fence and line.startswith("## "):
+            if name == heading:
+                break
+            name, buf = line[3:].strip(), [line]
+            continue
+        if name is not None:
+            buf.append(line)
+    return "\n".join(buf).rstrip("\n") + "\n" if name == heading else None
 
 
 def _scannable_markdown(root: Path):
@@ -302,26 +366,72 @@ def package_region_drift(root: Path) -> list[Finding]:
     return out
 
 
-def package_orphan_marker(root: Path) -> list[Finding]:
-    """A marker naming a package this machine has no record of applying."""
-    applied_dir = root / "migrations" / "applied"
-    if not applied_dir.is_dir():
-        return []          # nothing to judge against — a package may have been applied by hand
+LEDGER_INSTALLED = {"applied", "partial", "conflict-resolved"}
 
-    applied: set[str] = set()
-    for f in applied_dir.glob("*.md"):
-        applied.add(f.name.split(".pkg")[0])
-        found = PKG_FIELD.search(f.read_text(encoding="utf-8"))
-        if found:
-            applied.add(found.group(1))
+
+def _ledger_imports(root: Path) -> set[str] | None:
+    """Packages this machine has imported, from migrations/ledger.md. None when there is no ledger."""
+    ledger = root / "migrations" / "ledger.md"
+    if not ledger.is_file():
+        return None
+    found: set[str] = set()
+    for line in ledger.read_text(encoding="utf-8").splitlines():
+        cells = [c.strip() for c in CELL_SPLIT.split(line.strip())[1:-1]]
+        if len(cells) == 8 and cells[1] == "in" and cells[6] in LEDGER_INSTALLED:
+            found.add(cells[2])
+    return found
+
+
+def package_orphan_marker(root: Path) -> list[Finding]:
+    """A marker naming a package this machine has no record of importing."""
+    imported = _ledger_imports(root)
+    if imported is None:
+        return []          # ledger is local and git-ignored — a fresh clone has nothing to judge against
 
     out: list[Finding] = []
     for f, text in _scannable_markdown(root):
-        for package in sorted({p for p, _s, _c, _cl in _owned_regions(text)} - applied):
+        for package in sorted({p for p, _s, _c, _cl in _owned_regions(text)} - imported):
             out.append(
                 Finding("package_orphan_marker", "low", _rel(f, root),
-                        f"`{package}` region is installed, but no package by that name is in migrations/applied/")
+                        f"`{package}` region is installed, but no import of it is recorded in "
+                        f"migrations/ledger.md")
             )
+    return out
+
+
+MANIFEST_ENTRY = re.compile(r'^\s*-\s*\{path:\s*("(?:[^"\\]|\\.)*"),\s*sha:\s*([0-9a-f]{8})\s*\}\s*$')
+
+
+def package_manifest_drift(root: Path) -> list[Finding]:
+    """Whole files or profile sections imported from a package and changed here since.
+    Timelines are skipped: they grow locally by design and always merge on re-import."""
+    out: list[Finding] = []
+    manifests = root / "migrations" / "manifests"
+    if not manifests.is_dir():
+        return out
+    for mf in sorted(manifests.glob("*.yaml")):
+        package = mf.stem
+        for line in mf.read_text(encoding="utf-8").splitlines():
+            entry = MANIFEST_ENTRY.match(line)
+            if not entry:
+                continue
+            target, recorded = json.loads(entry.group(1)), entry.group(2)
+            path, _, heading = target.partition("#")
+            if path.rsplit("/", 1)[-1] == "Timeline.md":
+                continue
+            f = root / path
+            text = f.read_text(encoding="utf-8").replace("\r\n", "\n") if f.is_file() else None
+            if text is not None and heading:
+                text = _heading_section(text, heading)
+            if text is None:
+                out.append(Finding("package_manifest_drift", "low", path,
+                                   f"`{package}` installed {target}, which has been removed here"))
+                continue
+            now = region_sha(_drop_columns(text, path))
+            if now != recorded:
+                out.append(Finding("package_manifest_drift", "medium", path,
+                                   f"`{package}` {target} was edited here since import — the next "
+                                   f"re-import will conflict (recorded sha:{recorded}, now sha:{now})"))
     return out
 
 
@@ -556,6 +666,7 @@ def run_all(root: Path) -> dict:
         ecosystem_feature_note_drift,
         package_region_drift,
         package_orphan_marker,
+        package_manifest_drift,
         learning_drift,
         design_drift,
         complete_features_still_in_development,
