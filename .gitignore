@@ -14,3 +14,12 @@ venv/
 #   It is machine-specific and must not be shared.
 .claude/settings.json
 .claude/settings.local.json
+
+# Migrations — packages, manifests and the ledger are local (see migrations/README.md)
+migrations/in/*
+migrations/out/*
+migrations/applied/*
+migrations/manifests/*
+migrations/.staging/
+migrations/ledger.md
+!migrations/*/.gitkeep
