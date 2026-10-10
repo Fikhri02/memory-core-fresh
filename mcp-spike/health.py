@@ -17,7 +17,7 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass, asdict
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 STALE_DAYS = 60
@@ -656,6 +656,98 @@ def design_drift(root: Path) -> list[Finding]:
     return out
 
 
+SPARSE_ITEM = re.compile(r"^/(project-management|ecosystem)/([^/]+)/$")
+REPO_HEADER = re.compile(r"^\|\s*Name\s*\|\s*Local Path\s*\|", re.I)
+PATHLIKE = re.compile(r"(^|[\s`(])(~/|/Users/|/home/|[A-Za-z]:\\)")
+SYNC_STALE_DAYS = 60
+
+
+def _sync_modules():
+    import sys as _sys
+    _sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import sync_device
+    import sync_guard
+    return sync_device, sync_guard
+
+
+def sync_drift(root: Path, today: date | None = None, now: float | None = None) -> list[Finding]:
+    """Multi-device sync drift. Silent unless this install is a sync context (.memory-core/kind)."""
+    marker = root / ".memory-core" / "kind"
+    if not marker.is_file() or marker.read_text(encoding="utf-8").strip() != "context":
+        return []
+    dev, guard = _sync_modules()
+    out: list[Finding] = []
+
+    sparse = root / ".git" / "info" / "sparse-checkout"
+    if sparse.is_file():
+        checked_out = {(m.group(1), m.group(2)) for line in sparse.read_text(encoding="utf-8").splitlines()
+                       if (m := SPARSE_ITEM.match(line.strip())) and not m.group(2).startswith("_")}
+        followed = {(k, s) for k, slugs in dev.read_follow(root).items() for s in slugs}
+        for kind, slug in sorted(followed - checked_out):
+            out.append(Finding("sync_follow_drift", "medium", "device/follow.md",
+                               f"`{kind}/{slug}` is followed but not checked out — run sync"))
+        for kind, slug in sorted(checked_out - followed):
+            out.append(Finding("sync_follow_drift", "medium", "device/follow.md",
+                               f"`{kind}/{slug}` is checked out but not followed"))
+
+    for general in sorted((root / "project-management").glob("*/General.md")):
+        if general.parent.name.startswith("_"):
+            continue
+        lines = general.read_text(encoding="utf-8").splitlines()
+        for i, line in enumerate(lines):
+            if not REPO_HEADER.match(line):
+                continue
+            rows = [r for r in lines[i + 2:] if r.startswith("|")]
+            if any(len(c := [x.strip() for x in r.strip().strip("|").split("|")]) > 1 and c[1] for r in rows):
+                out.append(Finding("sync_local_path_in_general", "low", _rel(general, root),
+                                   "Repositories still has a Local Path — it belongs in device/paths.md (migrate-paths)"))
+            break
+    for map_md in sorted((root / "ecosystem").glob("*/map.md")):
+        for line in map_md.read_text(encoding="utf-8").splitlines():
+            cells = [c.strip() for c in line.strip().strip("|").split("|")] if line.startswith("|") else []
+            if len(cells) >= 4 and PATHLIKE.search(cells[3]):
+                out.append(Finding("sync_local_path_in_general", "low", _rel(map_md, root),
+                                   f"member `{cells[0]}` has a machine path in Location — it belongs in device/paths.md"))
+                break
+
+    today = today or date.today()
+    for d in dev.read_registry(root):
+        if d["status"] != "active" or not d["last_sync"]:
+            continue
+        last = date.fromisoformat(d["last_sync"][:10])
+        if (today - last).days > SYNC_STALE_DAYS:
+            out.append(Finding("sync_device_stale", "low", _rel(d["path"], root),
+                               f"`{d['name']}` last synced {d['last_sync'][:10]} — retire it if it is gone"))
+
+    git_dir = root / ".git"
+    if git_dir.exists():
+        import subprocess as sp
+        cfg = dev.read_kv(root / "device" / "sync.md")
+        remotes = sp.run(["git", "-C", str(root), "remote", "-v"], capture_output=True, text=True).stdout
+        seen = set()
+        for line in remotes.splitlines():
+            parts = line.split()
+            if len(parts) < 2 or (parts[0], parts[1]) in seen:
+                continue
+            seen.add((parts[0], parts[1]))
+            if not cfg.get("remote"):
+                continue
+            same = guard.normalise_remote(parts[1]) == guard.normalise_remote(cfg["remote"])
+            ok, reason = guard.remote_is_safe(parts[1], guard.deny_list(cfg),
+                                              cfg.get("visibility") if same else None, cfg["remote"])
+            if not ok:
+                out.append(Finding("sync_remote_unsafe", "high", ".git/config", f"remote `{parts[0]}`: {reason}"))
+        stamps = sp.run(["git", "-C", str(root), "log", "@{u}..HEAD", "--format=%ct"],
+                        capture_output=True, text=True)
+        if stamps.returncode == 0 and stamps.stdout.strip():
+            oldest = min(int(s) for s in stamps.stdout.split())
+            age = (now or datetime.now().timestamp()) - oldest
+            if age > 86400:
+                out.append(Finding("sync_unpushed", "medium", ".git",
+                                   f"{len(stamps.stdout.split())} commit(s) not uploaded, oldest {int(age // 86400)} day(s) — run sync"))
+    return out
+
+
 def run_all(root: Path) -> dict:
     findings: list[Finding] = []
     for check in (
@@ -669,6 +761,7 @@ def run_all(root: Path) -> dict:
         package_manifest_drift,
         learning_drift,
         design_drift,
+        sync_drift,
         complete_features_still_in_development,
         stale_timelines,
     ):

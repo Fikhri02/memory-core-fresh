@@ -93,6 +93,7 @@ _(empty — populate during brainstorm session)_
 - [ ] **Step 2**: Smart-check — did anything significant change? (new decision, direction shift, tasks added/completed)
   - If yes → rewrite Overall Summary (1–3 lines) to reflect latest state
   - If no → leave Overall Summary unchanged
+- [ ] **Sync upload**: if `device/sync.md` exists, run the **Upload** in `session-briefing` Step 0s with the label `save brainstorm {name}`
 - [ ] **Step 3**: Confirm: "Brainstorm saved."
 
 ---

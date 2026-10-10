@@ -5,9 +5,11 @@
 
 ## Repositories
 
-| Name | Local Path | Git Origin |
-|------|-----------|------------|
-|      |           |            |
+| Name | Git Origin |
+|------|------------|
+|      |            |
+
+> Local paths live in `device/paths.md` on each machine — never here, so syncing never fights over them.
 
 ## Design Standard
 

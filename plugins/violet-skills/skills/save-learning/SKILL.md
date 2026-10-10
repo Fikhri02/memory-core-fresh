@@ -66,6 +66,8 @@ already loaded.
 - [ ] If every module is closed, ask: "Mark {topic} done?" On a yes, set `**Status**: done` in
       `General.md`
 
+- [ ] **Sync upload**: if `device/sync.md` exists, run the **Upload** in `session-briefing` Step 0s with the label `save learning {topic}`
+
 ### Step 6: Report
 
 - [ ] "Saved **{topic}** — {o} objective(s) ticked, {c} concept note(s), {n} new at shaky."

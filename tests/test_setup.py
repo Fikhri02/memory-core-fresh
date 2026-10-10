@@ -96,5 +96,90 @@ class Summary(unittest.TestCase):
         self.assertNotIn("CUSTOMIZE.md", out.getvalue())
 
 
+
+class SyncJoin(unittest.TestCase):
+    def test_sync_flag_skips_companion_questions_and_joins(self):
+        with mock.patch.object(sys, "argv", ["setup.py", "--sync"]), \
+             mock.patch("setup.collect_inputs") as collect, \
+             mock.patch("setup.step_join_sync") as join, \
+             mock.patch("setup.ensure_pyyaml"), mock.patch("setup.check_python_version"):
+            setup.main()
+        collect.assert_not_called()
+        join.assert_called_once()
+
+    def test_sync_with_url_clones_sparse_then_runs_the_clone(self):
+        calls = []
+
+        def fake_run(args, **kw):
+            calls.append(args)
+            return result()
+
+        with mock.patch.object(sys, "argv", ["setup.py", "--sync", "git@github.com:me/ctx.git", "/tmp/mc"]), \
+             mock.patch("setup.subprocess.run", side_effect=fake_run), \
+             mock.patch("setup.ensure_pyyaml"), mock.patch("setup.check_python_version"):
+            setup.main()
+        self.assertEqual(["git", "clone", "--sparse", "git@github.com:me/ctx.git", "/tmp/mc"], calls[0])
+        self.assertEqual([sys.executable, str(Path("/tmp/mc") / "setup.py"), "--sync"], calls[-1])
+
+    def test_join_refuses_a_non_context_folder(self):
+        out = io.StringIO()
+        with mock.patch("setup._clone_kind", return_value=None), contextlib.redirect_stdout(out):
+            setup.step_join_sync(ROOT)
+        self.assertIn("not a memory-core context clone", out.getvalue())
+
+
+class CloneForSync(unittest.TestCase):
+    """Final review I1: a sparse clone must hold the core folders before setup runs."""
+
+    def test_clone_checks_out_core_and_templates_but_no_projects(self):
+        import os
+        import tempfile
+        env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@e", "GIT_COMMITTER_NAME": "t",
+               "GIT_COMMITTER_EMAIL": "t@e", "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, env):
+            base = Path(tmp)
+            src = base / "src"
+            for rel in ("mcp-spike/sync_git.py", "adapters/generate.py", "main/x.md",
+                        "project-management/_template/general.md", "project-management/alpha/Timeline.md", "setup.py"):
+                (src / rel).parent.mkdir(parents=True, exist_ok=True)
+                (src / rel).write_text("x\n")
+            for args in (["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-q", "-m", "c"]):
+                subprocess.run(["git", "-C", str(src), *args], check=True, capture_output=True)
+            dest = base / "dest"
+            self.assertEqual(0, setup.clone_for_sync(str(src), str(dest)))
+            self.assertTrue((dest / "mcp-spike/sync_git.py").is_file())
+            self.assertTrue((dest / "adapters/generate.py").is_file())
+            self.assertTrue((dest / "project-management/_template/general.md").is_file())
+            self.assertFalse((dest / "project-management/alpha").exists())
+
+
+class MarkContext(unittest.TestCase):
+    """A personalised install is context, never framework — sync setup and the framework guard rely on it."""
+
+    def test_mark_context_writes_the_marker(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".memory-core").mkdir()
+            (root / ".memory-core" / "kind").write_text("framework\n")
+            setup.step_mark_context(root)
+            self.assertEqual("context", (root / ".memory-core" / "kind").read_text().strip())
+
+    def test_main_marks_context_after_writing_memory(self):
+        steps = []
+        names = ("step_write_spec", "step_write_memory_files", "step_mark_context", "step_run_adapters",
+                 "step_write_claude_settings", "step_register_mcp", "step_install_plugin")
+        patches = [mock.patch(f"setup.{n}", side_effect=lambda *a, n=n: steps.append(n)) for n in names]
+        with mock.patch.object(sys, "argv", ["setup.py", "--reset"]), mock.patch("setup.collect_inputs", return_value={}), \
+             mock.patch("setup.print_summary"), mock.patch("setup.ensure_pyyaml"), mock.patch("setup.check_python_version"):
+            for p in patches:
+                p.start()
+            try:
+                setup.main()
+            finally:
+                for p in patches:
+                    p.stop()
+        self.assertLess(steps.index("step_write_memory_files"), steps.index("step_mark_context"))
+
 if __name__ == "__main__":
     unittest.main()

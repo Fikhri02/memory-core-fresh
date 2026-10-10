@@ -51,9 +51,9 @@ Format-1 packages (no `format:` field) are read as this kind.
 
   | Repo on disk | `project-management/{project}/` entry | Outcome |
   |---|---|---|
-  | yes | yes | record the path in the map, place Overview + `Components.md` line |
-  | yes | no | record the path in the map, flag for `document-project`, skip the Overview |
-  | no | — | mark `_(not on this machine)_` in the map's Members `Location`, skip the Overview |
+  | yes | yes | record the path in `device/paths.md`, place Overview + `Components.md` line |
+  | yes | no | record the path in `device/paths.md`, flag for `document-project`, skip the Overview |
+  | no | — | record `not here` in `device/paths.md`, skip the Overview |
 
 - [ ] **Never scaffold a project entry** from a feature package — that is `document-project`'s job.
       **Never invent a path** — "not here" is a recorded answer

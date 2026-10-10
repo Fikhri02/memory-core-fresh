@@ -63,6 +63,9 @@ already loaded.
 - [ ] Read the header of `project-management/{name}/Design.md` (above its first `##`) and hold
       its `**Layers**` value for the session — `design-preferences` loads those layer files when a
       design session starts. Do not load them now. No `**Layers**` line → stay silent
+- [ ] For each Repositories row, look up its git origin in `device/paths.md`. If a row has no path
+      on this device, ask once — *"Where is {repo} on this laptop? (path, or 'not here')"* — and
+      record the answer with `sync_device.set_path` (asked lazily, first open per laptop)
 - [ ] Extract: project name, description, tech stack (skip repo detail)
 - [ ] Output a 2-line project summary to user
 

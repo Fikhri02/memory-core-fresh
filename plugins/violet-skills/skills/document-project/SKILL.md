@@ -69,7 +69,7 @@ Scan the project root (infer path from cwd or ask):
   - `go.mod` → Go
   - `pom.xml` / `build.gradle` → Java / Kotlin
 - [ ] Get git `origin` URL if available: `git remote get-url origin`
-- [ ] Record absolute local path
+- [ ] Record the absolute local path in `device/paths.md` keyed by the git origin (`sync_device.set_path`) — never in `General.md`
 
 If the scan finds nothing (a brand-new project with no repo yet — the `"new project"` path), ask
 directly instead of guessing:
@@ -101,7 +101,7 @@ On confirmation:
 - [ ] Create every folder listed under `folders:` (currently `Plans`, `Feedbacks`)
 - [ ] Create every file listed under `files:` from its named template:
   - `General.md` from `_template/general.md` — name, description, technology, Repositories table
-    (local path + git origin), empty Dev Notes, empty Backlog
+    (name + git origin only — the local path goes to `device/paths.md`), empty Dev Notes, empty Backlog
   - `Timeline.md` from `_template/timeline.md` — one entry dated today: "Project created"
     (or "Session opened — documentation started" when entered via `document project`)
   - `Components.md` from `_template/components.md` — template defaults, or inferred components if
@@ -112,7 +112,8 @@ On confirmation:
 - [ ] Create symlinks in `Plans/` for any matching planning files:
   - `brainstorming/active/{slug}.md` → `Plans/{slug}-brainstorm.md`
   - `project-plans/active/{slug}.md` → `Plans/{slug}-plan.md`
-  - Shell: `ln -s "{absolute-source-path}" "project-management/{slug}/Plans/{filename}"`
+  - Shell, from the memory root: `ln -s "../../../{source-path}" "project-management/{slug}/Plans/{filename}"`
+    — always a **relative** link, so it still resolves on every synced laptop
   - **Only create a symlink when the source file actually exists** — never create one speculatively,
     it just leaves a dangling link
 - [ ] If `ecosystem/` holds any ecosystem folders, ask once: "Does this project belong to one of these?
@@ -136,7 +137,7 @@ Runs silently whenever document-project is active. Do not announce each append �
 | New functional area, layer, or module identified | Append to `Components.md` |
 | Design rule, colour, UX pattern, or visual constraint found | Append to `Design.md` |
 | Dev constraint, coding standard, or recurring rule encountered | Append to `General.md` Dev Notes |
-| New repository or local path identified | Add row to `General.md` Repositories table |
+| New repository identified | Add a row (name + git origin) to `General.md` Repositories; its local path goes to `device/paths.md` |
 
 **Rules**:
 - Never overwrite existing entries — append only

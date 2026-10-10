@@ -611,5 +611,92 @@ class DesignDrift(unittest.TestCase):
         self.assertIn("design_layers_missing", checks)
 
 
+
+import os as _os
+import subprocess as _sp
+from datetime import datetime as _dt
+
+_GIT_ENV = {**_os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@e", "GIT_COMMITTER_NAME": "t",
+            "GIT_COMMITTER_EMAIL": "t@e", "GIT_CONFIG_GLOBAL": _os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+
+
+def _git(root, *args, env=None):
+    return _sp.run(["git", "-C", str(root), *args], capture_output=True, text=True, env=env or _GIT_ENV)
+
+
+class SyncDrift(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name).resolve()
+        self.addCleanup(self._tmp.cleanup)
+        write(self.root, ".memory-core/kind", "context\n")
+
+    def checks(self, name, **kw):
+        return [f for f in health.sync_drift(self.root, **kw) if f.check == name]
+
+    def test_not_a_context_install_is_silent(self):
+        (self.root / ".memory-core/kind").write_text("framework\n")
+        write(self.root, "project-management/x/General.md", GENERAL_WITH_PATH)
+        self.assertEqual([], health.sync_drift(self.root))
+
+    def test_follow_drift_both_directions(self):
+        write(self.root, "device/follow.md", "# F\n\n## Projects\n\n- [x] alpha\n\n## Ecosystems\n\n_(none)_\n")
+        write(self.root, ".git/info/sparse-checkout", "/*\n!/*/\n/main/\n/project-management/beta/\n")
+        found = self.checks("sync_follow_drift")
+        self.assertEqual(2, len(found))
+        self.assertTrue(any("alpha" in f.detail for f in found))
+        self.assertTrue(any("beta" in f.detail for f in found))
+
+    def test_local_path_left_in_general_and_map(self):
+        write(self.root, "project-management/x/General.md", GENERAL_WITH_PATH)
+        write(self.root, "project-management/y/General.md", GENERAL_WITH_PATH.replace("`~/code/x`", ""))
+        write(self.root, "ecosystem/eco/map.md", "## Members\n\n| Project | Role | Documented | Location |\n"
+                                                "|--|--|--|--|\n| X | api | `x` | ~/code/x |\n| Y | ui | `y` | → General.md |\n")
+        paths = sorted(f.path for f in self.checks("sync_local_path_in_general"))
+        self.assertEqual(["ecosystem/eco/map.md", "project-management/x/General.md"], paths)
+
+    def test_stale_active_device_reported_retired_ignored(self):
+        rec = ("# {n}\n\n**Id**: {i} · **Registered**: 2026-01-01 · **Last sync**: {d} 09:00 · **Status**: {s}\n")
+        write(self.root, "devices/a.md", rec.format(n="old", i="1" * 8 + "-1111-4111-8111-" + "1" * 12, d="2026-07-01", s="active"))
+        write(self.root, "devices/b.md", rec.format(n="gone", i="2" * 8 + "-2222-4222-8222-" + "2" * 12, d="2026-01-01", s="retired"))
+        found = self.checks("sync_device_stale", today=date(2026, 10, 10))
+        self.assertEqual(1, len(found))
+        self.assertIn("old", found[0].detail)
+
+    def test_unsafe_remote_reported(self):
+        _git(self.root, "init", "-q", "-b", "main")
+        _git(self.root, "remote", "add", "origin", "/tmp/ctx.git")
+        _git(self.root, "remote", "add", "public", "https://github.com/Fikhri02/memory-core-fresh.git")
+        write(self.root, "device/sync.md", "# S\n\nremote: /tmp/ctx.git\nvisibility: local\ndeny: \n")
+        found = self.checks("sync_remote_unsafe")
+        self.assertEqual(1, len(found))
+        self.assertEqual("high", found[0].severity)
+        self.assertIn("public", found[0].detail)
+
+    def test_unpushed_commit_older_than_a_day(self):
+        bare = self.root / "bare.git"
+        _git(self.root, "init", "-q", "--bare", "-b", "main", str(bare))
+        _git(self.root, "init", "-q", "-b", "main")
+        write(self.root, "a.txt", "a\n")
+        _git(self.root, "add", "a.txt")
+        _git(self.root, "commit", "-q", "-m", "a")
+        _git(self.root, "remote", "add", "origin", str(bare))
+        _git(self.root, "push", "-q", "-u", "origin", "main")
+        write(self.root, "b.txt", "b\n")
+        _git(self.root, "add", "b.txt")
+        old = {**_GIT_ENV, "GIT_COMMITTER_DATE": "2026-10-01T09:00:00", "GIT_AUTHOR_DATE": "2026-10-01T09:00:00"}
+        _git(self.root, "commit", "-q", "-m", "b", env=old)
+        found = self.checks("sync_unpushed", now=_dt(2026, 10, 10, 9, 0).timestamp())
+        self.assertEqual(1, len(found))
+        self.assertEqual([], self.checks("sync_unpushed", now=_dt(2026, 10, 1, 12, 0).timestamp()))
+
+    def test_run_all_includes_sync_findings(self):
+        write(self.root, "project-management/x/General.md", GENERAL_WITH_PATH)
+        self.assertIn("sync_local_path_in_general", {f["check"] for f in health.run_all(self.root)["findings"]})
+
+
+GENERAL_WITH_PATH = ("# X\n\n## Repositories\n\n| Name | Local Path | Git Origin |\n|------|-----------|------------|\n"
+                     "| X | `~/code/x` | `git@github.com:a/x.git` |\n")
+
 if __name__ == "__main__":
     unittest.main()

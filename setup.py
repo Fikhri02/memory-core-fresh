@@ -315,11 +315,78 @@ def print_summary(tokens: dict[str, str]) -> None:
 # Main
 # =============================================================================
 
+def step_mark_context(root: Path) -> None:
+    """A personalised install is a context install — never the framework (sync and its guard rely on it)."""
+    marker = root / ".memory-core" / "kind"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text("context\n", encoding="utf-8")
+
+
+def clone_for_sync(url: str, dest: str) -> int:
+    """Clone the private memory repo sparsely, with every core folder checked out (no projects yet),
+    so the clone's own setup.py, adapters/ and mcp-spike/ exist before setup runs."""
+    cloned = subprocess.run(["git", "clone", "--sparse", url, dest])
+    if cloned.returncode != 0:
+        return cloned.returncode
+    listing = subprocess.run(["git", "-C", dest, "ls-tree", "-d", "-z", "--name-only", "HEAD"],
+                             capture_output=True, text=True).stdout
+    opt_in = ("project-management", "ecosystem")
+    patterns = [d for d in listing.split("\0") if d and d not in opt_in]
+    patterns += [f"{kind}/_template" for kind in opt_in
+                 if subprocess.run(["git", "-C", dest, "cat-file", "-e", f"HEAD:{kind}/_template"],
+                                   capture_output=True).returncode == 0]
+    return subprocess.run(["git", "-C", dest, "sparse-checkout", "set", "--cone", *patterns]).returncode
+
+
+def _clone_kind(root: Path) -> str | None:
+    """A fresh sparse clone has not checked .memory-core/ out yet, so fall back to git."""
+    marker = root / ".memory-core" / "kind"
+    if marker.is_file():
+        return marker.read_text(encoding="utf-8").strip()
+    proc = subprocess.run(["git", "-C", str(root), "show", "HEAD:.memory-core/kind"], capture_output=True, text=True)
+    return proc.stdout.strip() if proc.returncode == 0 else None
+
+
+def step_join_sync(root: Path) -> None:
+    """New laptop: this folder is a sparse clone of the private context repo."""
+    if _clone_kind(root) != "context":
+        print("This folder is not a memory-core context clone (.memory-core/kind is not 'context').")
+        print("Clone your private memory repo first:  python3 setup.py --sync <repo URL> [folder]")
+        return
+    step_run_adapters(root)
+    step_write_claude_settings(root)
+    step_register_mcp(root)
+    step_install_plugin(root)
+    name = prompt_optional("Name for this device", "")
+    account = prompt_optional("GitHub account that owns the private repo", "")
+    args = [sys.executable, str(root / "mcp-spike" / "sync_git.py"), "--root", str(root), "join"]
+    if name:
+        args += ["--name", name]
+    if account:
+        args += ["--account", account]
+    subprocess.run(args)
+    print()
+    print("Device registered. In a Claude Code session here, say 'sync status' and then")
+    print("'follow project <name>' for each project this laptop should have.")
+
+
 def main() -> None:
     check_python_version()
     ensure_pyyaml()
 
     root = Path(__file__).parent
+    if "--sync" in sys.argv:
+        rest = sys.argv[sys.argv.index("--sync") + 1:]
+        if rest:
+            url = rest[0]
+            dest = rest[1] if len(rest) > 1 else str(Path.cwd() / "memory-core")
+            if clone_for_sync(url, dest) == 0:
+                subprocess.run([sys.executable, str(Path(dest) / "setup.py"), "--sync"])
+            else:
+                print(f"Could not clone {url} — check the URL and your access to it.")
+        else:
+            step_join_sync(root)
+        return
     force_reset = "--reset" in sys.argv
 
     if not force_reset and is_already_setup(root):
@@ -334,6 +401,7 @@ def main() -> None:
 
     step_write_spec(root, tokens)
     step_write_memory_files(root, tokens)
+    step_mark_context(root)
     step_run_adapters(root)
     step_write_claude_settings(root)
     step_register_mcp(root)
