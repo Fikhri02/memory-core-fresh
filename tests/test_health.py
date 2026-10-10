@@ -396,5 +396,220 @@ class LearningDrift(unittest.TestCase):
         self.assertIn("learning_note_missing", checks)
 
 
+DESIGN_MD = """# Design — {name}
+
+{header}
+> All UI implementations must follow this design standard.
+
+---
+
+## Visual Identity
+
+**Type**: this label below the header is not a reference
+"""
+
+PALETTE_ENTRY = """## {id}
+**Source**: acme-cms · **Used in**: acme-cms · **Added**: 2026-10-10
+
+| Role | Light | Dark |
+|------|-------|------|
+| bg | #FFFFFF | #101828 |
+
+| Criterion | Score | By |
+|-----------|-------|----|
+| Contrast & accessibility | {s[0]} | AI (computed) |
+| Completeness | {s[1]} | AI |
+| Dark-mode readiness | {s[2]} | AI |
+| Mood fit | {s[3]} | You |
+| Distinctiveness | {s[4]} | You |
+| Held up in use | {s[5]} | You |
+
+**Average**: see table
+"""
+
+PALETTES = """# Palettes
+
+## Ranked
+
+| Rank | Id | Avg | Objective | Subjective | Used in |
+|------|----|-----|-----------|------------|---------|
+{ranked}
+
+## Unranked
+
+| Id | Source | Scored |
+|----|--------|--------|
+
+---
+
+{entries}
+"""
+
+
+class DesignDrift(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+
+    def project(self, header, name="acme-cms"):
+        write(self.root, f"project-management/{name}/Design.md",
+              DESIGN_MD.format(name=name, header=header))
+
+    def palettes(self, ranked="", entries=""):
+        write(self.root, "design/palettes.md", PALETTES.format(ranked=ranked, entries=entries))
+
+    @staticmethod
+    def entry(id_, scores):
+        return PALETTE_ENTRY.format(id=id_, s=[str(x) for x in scores])
+
+    def checks(self, name):
+        return [f for f in health.design_drift(self.root) if f.check == name]
+
+    # -- project headers --------------------------------------------------------------------
+
+    def test_design_without_layers_line_is_reported(self):
+        self.project("")
+        found = self.checks("design_layers_missing")
+        self.assertEqual(1, len(found))
+        self.assertEqual("project-management/acme-cms/Design.md", found[0].path)
+        self.assertEqual("low", found[0].severity)
+
+    def test_blank_layers_line_from_template_counts_as_missing(self):
+        self.project("**Layers**: \n**Palette**:  · **Type**: ")
+        self.assertEqual(1, len(self.checks("design_layers_missing")))
+        self.assertEqual([], self.checks("design_ref_unknown"))
+
+    def test_declared_layers_are_clean_with_tolerant_casing(self):
+        self.project("**Layers**: Web-App, `mobile` ")
+        self.assertEqual([], self.checks("design_layers_missing"))
+        self.assertEqual([], self.checks("design_layer_unknown"))
+
+    def test_none_layer_is_valid(self):
+        self.project("**Layers**: none", name="acme-api")
+        self.assertEqual([], health.design_drift(self.root))
+
+    def test_unknown_layer_is_reported(self):
+        self.project("**Layers**: webapp, mobile")
+        found = self.checks("design_layer_unknown")
+        self.assertEqual(1, len(found))
+        self.assertIn("`webapp`", found[0].detail)
+
+    def test_template_folder_is_not_checked(self):
+        write(self.root, "project-management/_template/design.md", DESIGN_MD.format(name="x", header=""))
+        write(self.root, "project-management/_template/Design.md", DESIGN_MD.format(name="x", header=""))
+        self.assertEqual([], health.design_drift(self.root))
+
+    def test_project_without_design_file_is_not_checked(self):
+        (self.root / "project-management" / "bare").mkdir(parents=True)
+        self.assertEqual([], health.design_drift(self.root))
+
+    # -- references -------------------------------------------------------------------------
+
+    def test_reference_to_missing_palette_is_reported(self):
+        self.project("**Layers**: web-app\n**Palette**: acme-navy · **Type**: inter-mono")
+        write(self.root, "design/type.md", "# Type\n\n## inter-mono\n")
+        found = self.checks("design_ref_unknown")
+        self.assertEqual(1, len(found))
+        self.assertIn("Palette `acme-navy`", found[0].detail)
+        self.assertIn("design/palettes.md", found[0].detail)
+
+    def test_reference_to_existing_entries_is_clean(self):
+        self.project("**Layers**: web-app\n**Palette**: `acme-navy` · **Type**: inter-mono")
+        self.palettes(entries=self.entry("acme-navy", ["", "", "", "", "", ""]))
+        write(self.root, "design/type.md", "# Type\n\n## inter-mono\n")
+        self.assertEqual([], self.checks("design_ref_unknown"))
+
+    def test_type_label_below_header_is_not_a_reference(self):
+        # DESIGN_MD carries "**Type**: this label..." under ## Visual Identity — header-only parse.
+        self.project("**Layers**: web-app")
+        self.assertEqual([], self.checks("design_ref_unknown"))
+
+    def test_entry_inside_code_fence_does_not_exist(self):
+        self.project("**Layers**: web-app\n**Palette**: example-id")
+        self.palettes(entries="```\n" + self.entry("example-id", [8, 8, 8, 8, 8, 8]) + "```\n")
+        self.assertEqual(1, len(self.checks("design_ref_unknown")))
+
+    # -- ranking ----------------------------------------------------------------------------
+
+    def test_ranked_average_matching_scores_is_clean(self):
+        self.palettes(ranked="| 1 | acme-navy | 7.5 | 7.0 | 8.0 | acme-cms |",
+                      entries=self.entry("acme-navy", [8, 7, 6, 9, 7, 8]))
+        self.assertEqual([], health.design_drift(self.root))
+
+    def test_ranked_average_after_rescore_is_stale(self):
+        self.palettes(ranked="| 1 | acme-navy | 7.5 | 7.0 | 8.0 | acme-cms |",
+                      entries=self.entry("acme-navy", [8, 7, 6, 9, 7, 2]))
+        found = self.checks("design_rank_stale")
+        self.assertEqual(1, len(found))
+        self.assertIn("6.5", found[0].detail)
+
+    def test_ranks_out_of_order_are_stale(self):
+        self.palettes(
+            ranked="| 1 | low-one | 5.0 | 5.0 | 5.0 | — |\n| 2 | high-one | 8.0 | 8.0 | 8.0 | — |",
+            entries=self.entry("low-one", [5] * 6) + "\n" + self.entry("high-one", [8] * 6),
+        )
+        found = self.checks("design_rank_stale")
+        self.assertEqual(1, len(found))
+        self.assertIn("high-one", found[0].detail)
+
+    def test_ranked_entry_with_missing_scores_is_stale(self):
+        self.palettes(ranked="| 1 | acme-navy | 7.0 | 7.0 | — | acme-cms |",
+                      entries=self.entry("acme-navy", [8, 7, 6, "", "", ""]))
+        found = self.checks("design_rank_stale")
+        self.assertEqual(1, len(found))
+        self.assertIn("3 of 6", found[0].detail)
+
+    def test_ranked_id_without_entry_is_stale(self):
+        self.palettes(ranked="| 1 | ghost | 7.0 | 7.0 | 7.0 | — |")
+        self.assertEqual(1, len(self.checks("design_rank_stale")))
+
+    def test_fully_scored_but_unranked_is_stale(self):
+        self.palettes(entries=self.entry("acme-navy", [8, 7, 6, 9, 7, 8]))
+        found = self.checks("design_rank_stale")
+        self.assertEqual(1, len(found))
+        self.assertIn("not in the ranked table", found[0].detail)
+
+    def test_partly_scored_unranked_entry_is_clean(self):
+        self.palettes(entries=self.entry("acme-navy", [8, 7, 6, "—", "", ""]))
+        self.assertEqual([], health.design_drift(self.root))
+
+    def test_invalid_scores_are_reported_and_not_averaged(self):
+        self.palettes(entries=self.entry("acme-navy", ["8.5", 11, 0, 9, 7, 8]))
+        found = self.checks("design_score_invalid")
+        self.assertEqual(3, len(found))
+        self.assertEqual([], self.checks("design_rank_stale"))
+
+    def test_misnamed_entry_heading_does_not_spill_into_previous_entry(self):
+        misnamed = self.entry("b-two", [9, 9, 9, 9, 9, 9]).replace("## b-two", "## b-two — Acme teal")
+        entries = health.library_entries(self.entry("a-one", [8, 7, 6, "", "", ""]) + "\n" + misnamed)
+        self.assertEqual(6, len(entries["a-one"]))
+
+    def test_misnamed_entry_heading_is_reported(self):
+        misnamed = self.entry("b-two", [""] * 6).replace("## b-two", "## b-two — Acme teal")
+        self.palettes(entries=misnamed)
+        found = self.checks("design_entry_invalid")
+        self.assertEqual(1, len(found))
+        self.assertIn("b-two — Acme teal", found[0].detail)
+
+    def test_ranked_and_unranked_headings_are_not_entries(self):
+        self.palettes()
+        self.assertEqual([], health.design_drift(self.root))
+
+    def test_role_table_rows_are_not_scores(self):
+        # The Role | Light | Dark table is also 3 columns; only named criteria count.
+        entries = health.library_entries(self.entry("acme-navy", [""] * 6))
+        self.assertEqual(6, len(entries["acme-navy"]))
+        self.assertNotIn("bg", [c for c, _ in entries["acme-navy"]])
+
+    def test_no_design_folder_is_not_an_error(self):
+        self.assertEqual([], health.design_drift(self.root))
+
+    def test_run_all_includes_design_findings(self):
+        self.project("")
+        checks = {f["check"] for f in health.run_all(self.root)["findings"]}
+        self.assertIn("design_layers_missing", checks)
+
+
 if __name__ == "__main__":
     unittest.main()

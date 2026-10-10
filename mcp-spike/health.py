@@ -443,6 +443,20 @@ PROJECT_LINK = re.compile(r"^- `([^`]+)`", re.M)
 MD_LINK_TARGET = re.compile(r"\]\(([^)]+)\)")
 SEPARATOR_CELL = re.compile(r"^:?-+:?$")
 RATED = {"shaky", "okay", "solid"}
+DESIGN_LAYERS = {"website", "web-app", "mobile", "none"}
+DESIGN_LAYERS_LINE = re.compile(r"^\*\*Layers\*\*:[ \t]*(.*)$", re.M)
+DESIGN_REF = re.compile(r"(?:^|·)[ \t]*\*\*(Palette|Type)\*\*:[ \t]*([^·\n]*)", re.M)
+DESIGN_LIBRARIES = {"Palette": "palettes.md", "Type": "type.md"}
+LIBRARY_ENTRY = re.compile(r"^## ([a-z0-9]+(?:-[a-z0-9]+)*)[ \t]*$", re.M)
+ANY_H2 = re.compile(r"^## (.*?)[ \t]*$", re.M)
+LIBRARY_SECTIONS = {"Ranked", "Unranked"}
+TABLE_ROW = re.compile(r"^\|(.*)\|[ \t]*$", re.M)
+OBJECTIVE_CRITERIA = {
+    "contrast & accessibility", "completeness", "dark-mode readiness",   # palettes
+    "legibility", "coverage", "availability",                            # type pairings
+}
+SUBJECTIVE_CRITERIA = {"mood fit", "distinctiveness", "personality fit", "pairing harmony", "held up in use"}
+UNSET = {"", "—", "–", "-", "n/a", "none"}
 
 
 def progress_rows(text: str) -> list[tuple[str, str, str, str, str]]:
@@ -498,6 +512,150 @@ def learning_drift(root: Path) -> list[Finding]:
     return out
 
 
+def _cells(inner: str) -> list[str]:
+    return [c.strip() for c in inner.split("|")]
+
+
+def design_header(text: str) -> str:
+    """A Design.md header is everything before the first `## ` section, so a **Type** label
+    further down (a component spec, say) is never mistaken for a library reference."""
+    head = re.split(r"^## ", text, maxsplit=1, flags=re.M)[0]
+    return CODE_FENCE.sub("", head)
+
+
+def library_entries(text: str) -> dict[str, list[tuple[str, str]]]:
+    """`## {id}` sections of a design library → (criterion, score cell) rows. Rows are picked by
+    criterion name, so the 3-column Role | Light | Dark table never counts. Code fences are
+    stripped first: format examples in a library are not entries."""
+    text = CODE_FENCE.sub("", text)
+    known = OBJECTIVE_CRITERIA | SUBJECTIVE_CRITERIA
+    matches = list(LIBRARY_ENTRY.finditer(text))
+    out: dict[str, list[tuple[str, str]]] = {}
+    for m in matches:
+        # A section ends at the next `## ` of any shape, so a misnamed heading below cannot
+        # hand its scores to this entry.
+        nxt = ANY_H2.search(text, m.end())
+        end = nxt.start() if nxt else len(text)
+        rows = []
+        for inner in TABLE_ROW.findall(text[m.end():end]):
+            cells = _cells(inner)
+            if len(cells) == 3 and cells[0].strip("*_ ").lower() in known:
+                rows.append((cells[0].strip("*_ ").lower(), cells[1]))
+        out[m.group(1)] = rows
+    return out
+
+
+def _score(cell: str) -> int | None | str:
+    """An integer 1–10, None when unscored, or the string "invalid"."""
+    c = cell.strip("*_` ")
+    if c.lower() in UNSET:
+        return None
+    if c.isdigit() and 1 <= int(c) <= 10:
+        return int(c)
+    return "invalid"
+
+
+def _library_drift(f: Path, text: str, entries: dict, root: Path) -> list[Finding]:
+    rel = _rel(f, root)
+    out: list[Finding] = []
+    for heading in ANY_H2.findall(CODE_FENCE.sub("", text)):
+        if heading not in LIBRARY_SECTIONS and not LIBRARY_ENTRY.match(f"## {heading}"):
+            out.append(Finding("design_entry_invalid", "medium", rel,
+                               f"`## {heading}` is not a kebab-case id — the entry cannot be referenced or ranked"))
+    averages: dict[str, float | int | str] = {}   # float average · int count scored so far · "invalid"
+    for id_, rows in entries.items():
+        scores = []
+        for criterion, cell in rows:
+            s = _score(cell)
+            if s == "invalid":
+                out.append(Finding("design_score_invalid", "medium", rel,
+                                   f"`{id_}` {criterion} is `{cell}` — scores are whole numbers 1–10"))
+            elif s is not None:
+                scores.append(s)
+        if any(_score(c) == "invalid" for _, c in rows):
+            averages[id_] = "invalid"
+        elif len(scores) == 6 and len(rows) == 6:
+            averages[id_] = round(sum(scores) / 6, 1)
+        else:
+            averages[id_] = len(scores)
+
+    ranked: list[tuple[int, str, str]] = []
+    for inner in TABLE_ROW.findall(CODE_FENCE.sub("", text)):
+        cells = _cells(inner)
+        if len(cells) == 6 and cells[0].isdigit():
+            ranked.append((int(cells[0]), cells[1].strip("`"), cells[2]))
+
+    ranked_ids = {id_ for _, id_, _ in ranked}
+    previous: tuple[str, float] | None = None
+    for rank, id_, avg_cell in sorted(ranked):
+        state = averages.get(id_, "missing")
+        if state == "missing":
+            out.append(Finding("design_rank_stale", "medium", rel, f"`{id_}` is ranked but has no entry"))
+            continue
+        if state == "invalid":
+            continue
+        if isinstance(state, int):
+            out.append(Finding("design_rank_stale", "medium", rel,
+                               f"`{id_}` is ranked with only {state} of 6 scores — unranked until all six are scored"))
+            continue
+        try:
+            shown = float(avg_cell)
+        except ValueError:
+            shown = None
+        if shown is None or abs(shown - state) > 0.05:
+            out.append(Finding("design_rank_stale", "medium", rel,
+                               f"`{id_}` shows avg {avg_cell} but its scores average {state:.1f}"))
+        if previous and state > previous[1]:
+            out.append(Finding("design_rank_stale", "medium", rel,
+                               f"`{id_}` (avg {state:.1f}) is ranked below `{previous[0]}` (avg {previous[1]:.1f})"))
+        previous = (id_, state)
+
+    for id_, state in averages.items():
+        if isinstance(state, float) and id_ not in ranked_ids:
+            out.append(Finding("design_rank_stale", "medium", rel,
+                               f"`{id_}` has all six scores but is not in the ranked table"))
+    return out
+
+
+def design_drift(root: Path) -> list[Finding]:
+    out: list[Finding] = []
+    libraries: dict[str, dict] = {}
+    for label, fname in DESIGN_LIBRARIES.items():
+        f = root / "design" / fname
+        text = f.read_text(encoding="utf-8") if f.is_file() else ""
+        libraries[label] = library_entries(text)
+        if text:
+            out.extend(_library_drift(f, text, libraries[label], root))
+
+    pm = root / "project-management"
+    if not pm.is_dir():
+        return out
+    for project in sorted(d for d in pm.iterdir() if d.is_dir() and not d.name.startswith("_")):
+        design = project / "Design.md"
+        if not design.is_file():
+            continue
+        rel = _rel(design, root)
+        header = design_header(design.read_text(encoding="utf-8"))
+        line = DESIGN_LAYERS_LINE.search(header)
+        layers = [v.strip().strip("`").strip().lower() for v in line.group(1).split(",")] if line else []
+        layers = [v for v in layers if v]
+        if not layers:
+            out.append(Finding("design_layers_missing", "low", rel,
+                               "no **Layers** declared — design sessions cannot tell which layer files to load"))
+        for layer in layers:
+            if layer not in DESIGN_LAYERS:
+                out.append(Finding("design_layer_unknown", "medium", rel,
+                                   f"layer `{layer}` is not website, web-app, mobile or none — it loads nothing"))
+        for label, raw in DESIGN_REF.findall(header):
+            ref = raw.strip().strip("`").strip()
+            if ref.lower() in UNSET:
+                continue
+            if ref not in libraries[label]:
+                out.append(Finding("design_ref_unknown", "medium", rel,
+                                   f"{label} `{ref}` has no entry in design/{DESIGN_LIBRARIES[label]}"))
+    return out
+
+
 def run_all(root: Path) -> dict:
     findings: list[Finding] = []
     for check in (
@@ -510,6 +668,7 @@ def run_all(root: Path) -> dict:
         package_orphan_marker,
         package_manifest_drift,
         learning_drift,
+        design_drift,
         complete_features_still_in_development,
         stale_timelines,
     ):

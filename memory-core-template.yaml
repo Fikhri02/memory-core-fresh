@@ -67,6 +67,7 @@ memory_root:
     - notes/
     - outputs/
     - career/
+    - design/
 
 # =============================================================================
 # MEMORY FILES
@@ -1999,3 +2000,105 @@ skills:
       - ambiguity_reported_not_resolved: true
     level_history:
       1: "Base: lookup, browse, section-ranked search, project view, and health across staleness, unresolved links, and cross-domain slug collisions"
+
+  # ---------------------------------------------------------------------------
+  design-preferences:
+    description: >
+      Use during any UI, mockup or visual design work, when the user reacts to something visual,
+      and on 'check design', 'seed design', 'design directions', 'rank palettes', 'rank fonts',
+      'rank [id]', 'harvest design'. Applies design/ taste by layer, files new rules inline with
+      confirmation, seeds contrasting directions with a journal, ranks palettes and type pairings.
+    tier: on_demand
+    level: 1
+    triggers:
+      explicit:
+        - "seed design"
+        - "harvest design"
+        - "rank palettes"
+        - "rank fonts"
+        - "check design"
+        - "design directions"
+        - "rank palette"
+        - "rank font"
+      passive: "Any design session; any visual reaction from the user (praise or complaint about colour, type, spacing, motion, layout)"
+    activation_message: "_(design-preferences activates)_"
+    folder_root: "design/"
+    commands:
+      apply:
+        triggers: ["check design", "any design session"]
+        protocol:
+          - step: 1
+            action: load
+            target: "design/general.md design/{layer}.md project-management/{name}/Design.md"
+            description: >
+              Load stack, later overrides earlier: general → layers declared in the project Design.md
+              header (**Layers**: website / web-app / mobile / none) → the project's Design.md. Layers
+              sit side by side, each in its own context. No project → infer layers from the task and
+              say so. Libraries and journal are not loaded here
+          - step: 2
+            action: check
+            description: >
+              Before showing any UI, check it against the loaded rules and fix violations; hand over
+              with 'Checked against: {layers} · {project}' and any rule bent, with why
+      capture:
+        triggers: ["visual reaction from the user"]
+        protocol:
+          - step: 1
+            action: confirm
+            description: >
+              Ask at once: File as {layer} rule: '{rule}' ("their words")? [yes / edit / other layer /
+              project-only / no]. On conflict with an existing rule offer replace / keep both scoped / skip
+          - step: 2
+            action: write
+            target: "design/{layer}.md or project-management/{name}/Design.md"
+            description: "On yes only: '- **{Rule}**: {detail}. \"{words}\" ({date})' under the matching section"
+      seed:
+        triggers: ["seed design", "design directions"]
+        protocol:
+          - step: 1
+            action: present
+            description: >
+              2–3 contrasting directions (palette, type pairing, sample screen, 'why it works'
+              principles), at least one labelled Stretch beyond the current rules; visual companion,
+              or HTML in outputs/design/{project}/
+          - step: 2
+            action: write
+            target: "design/journal.md"
+            description: "On yes: append Shown / Picked / Rejected / Learned; offer new palettes or pairings to the libraries, unranked"
+      rank:
+        triggers: ["rank palettes", "rank fonts", "rank palette", "rank font"]
+        protocol:
+          - step: 1
+            action: score
+            description: >
+              Render the entries, score the objective criteria with the working shown (WCAG ratios:
+              10 all AAA, 7 all AA, any AA failure caps at 4), then ask the user's three scores
+          - step: 2
+            action: write
+            target: "design/palettes.md design/type.md"
+            description: >
+              On yes: scores into the entry, rescore history kept in Notes; rank by the mean of six
+              rounded to one decimal, ties by the subjective mean; unranked until all six are scored
+      harvest:
+        triggers: ["harvest design"]
+        protocol:
+          - step: 1
+            action: collect
+            description: >
+              Ask which projects the user actually shaped; read their Design.md, the Visual Design
+              Language section of main/preferences.md and Claude auto-memory feedback; sort every rule
+              into general / website / web-app / mobile / project-only; collect palettes and pairings;
+              propose project headers; flag conflicts
+          - step: 2
+            action: write
+            description: "One review; write only what is approved; leave a pointer in main/preferences.md"
+    rules:
+      - "Nothing is written without the user's yes — no rule, score, journal entry or header line"
+      - "Subjective scores are asked, never inferred"
+      - "Never write to context/"
+      - "Layer files hold taste; a rule true only for one product goes in that project's Design.md"
+      - "Seeding must include at least one direction beyond the current rules, labelled Stretch"
+      - "Seed and rank are rendered, never hex codes in prose alone"
+      - "Journal entries and rescore history are appended, never rewritten"
+    level_history:
+      1: "Base: layered load stack, apply guardrail, inline capture, seed with contrasting directions and journal, 1–10 rank scorecard, one-time harvest"
