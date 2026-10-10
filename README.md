@@ -43,8 +43,8 @@ Then open this folder in Claude Code and type your companion's name.
 | `sync-git` | `"sync git"`, after a merge/pull | Syncs commits into the feature Log and project Timeline, attributed per author |
 | `manage-ecosystem` | `"new ecosystem"`, `"list ecosystems"` | Maps which projects belong together and which domains span several of them |
 | `document-ecosystem-feature` | `"document feature [X] across [ecosystem]"` | Documents one feature across every member — one cross-repo note, one Overview per member |
-| `package-ecosystem-feature` | `"package feature [X]"`, `"export feature"` | Packages one documented feature into a portable file, machine-bound paths stripped |
-| `unpackage-ecosystem-feature` | `"unpackage feature [X]"`, `"import feature"` | Imports a packaged feature, creating the ecosystem if absent; never creates project entries |
+| `export-package` | `"export [name]"`, `"export my profile"`, `"package feature [X]"` | Packages a project, ecosystem, feature or the profile into one labelled file — for yourself or to share |
+| `import-package` | `"import [name]"`, `"import migration"`, `"migration log"` | Reads the package label and places it safely; never overwrites local edits; keeps a local ledger |
 | `start-learning` | `"start learning [topic]"` | Creates a learning topic: goal, a drafted or course-mirrored study plan, a concept table |
 | `continue-learning` | `"continue learning [topic]"` | Quizzes shaky concepts first, then the next objective or an exercise |
 | `save-learning` | `"save learning"` | Ticks confirmed objectives, writes concept notes, appends the study log |
@@ -106,7 +106,7 @@ memory-core/
   notes/                      investigation and analysis notes
   learning/                   study topics: plan, concept notes, progress, exercises
   career/                     profile, job files, tracker, search runs, timeline
-  migrations/                 packaged ecosystem features in transit (out / in / applied)
+  migrations/                 labelled packages in transit, manifests, ledger — all local
   outputs/                    generated platform prompts
 ```
 
@@ -152,33 +152,22 @@ Each ecosystem is a folder: `map.md` is the map, `features/*.md` are the cross-r
 the expensive artifact — it is the product of reading every member repo — and it is what
 `continue-project` draws on to warn you that a change is almost never one-repo.
 
-That knowledge is also the thing most worth moving between machines. `package-ecosystem-feature`
-writes one feature into a single portable file:
+That knowledge — and the projects around it — is worth moving between machines and people.
+`export-package` writes one labelled file:
 
 ```
-migrations/out/{feature}@{ecosystem}.pkg.md
+migrations/out/{id}.v{n}.pkg.md        id: wikipetia@project · acme@ecosystem · dep@acme · profile@irfan
 ```
 
-The package carries the note, the map entries that place it, and each member's
-`Features/{Component}/Overview.md`. It does **not** carry `Local Path`, `Timeline.md`, or anything
-under `main/` — the machine-bound and session-bound halves stay behind. `git_origin` travels in
-their place, so the receiving machine can recognise which repo it is being asked to locate.
+It works out the **kind** from what you name — a project, an ecosystem, one feature, or your profile
+— and asks the **audience**: for you on another machine (`self`, everything travels) or for someone
+else (`share`, timelines, session history and personal details stripped, with a scan for anything
+that looks personal). Machine-bound data never travels; `git_origin` goes in its place.
 
-`unpackage-ecosystem-feature` reads it on the other side. It creates the ecosystem if that machine
-has never seen it, asks where each member repo lives, and records the ones that are not there. It
-never creates a project entry — that stays `document-project`'s job.
-
-Imported regions carry a marker with a content hash:
-
-```markdown
-<!-- pkg:{feature}@{ecosystem} v2 sha:ab12cd34 -->
-- **{Feature}** — who drives it · who owns the data · who consumes it
-<!-- /pkg:{feature}@{ecosystem} -->
-```
-
-so a second import replaces exactly what it owns, leaves your own edits alone, and is a no-op when
-nothing changed. A region edited locally is never overwritten — it stops and asks — and
-`health_check` reports it as drift in the meantime.
+`import-package` reads the label on the other side and places the package where its kind belongs. It
+asks before writing anything, checks every path, and never overwrites something you edited locally —
+a hash recorded at import tells your edits apart from the package's. Timelines merge by date. Every
+export and import is a row in a local, git-ignored `migrations/ledger.md` ("migration log").
 
 See `migrations/README.md` for the file shape and the full re-import table.
 
@@ -212,9 +201,10 @@ all tasks checked      →  commit, then optionally move the feature to Complete
 "save"                 →  session context to memory; older recaps to the archive
 
 "document feature X across E"  →  one cross-repo note + an Overview per member
-"package feature X"            →  migrations/out/X@E.pkg.md, machine-bound paths stripped
-"import feature X"             →  on the other machine: ecosystem created if absent,
-                                  member repos located, only owned regions written
+"export X"                     →  migrations/out/X@kind.vN.pkg.md — kind inferred,
+                                  audience asked, machine-bound data stripped
+"import X"                     →  on the other machine: label read, paths checked,
+                                  plan confirmed, local edits never overwritten
 ```
 
 Feature files carry **no status field**. A file in `Development/` is active; moving it to

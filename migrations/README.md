@@ -1,10 +1,10 @@
 # Migrations
 
-Packaged ecosystem features in transit between machines. One file is one feature's cross-repo
-knowledge, made portable.
+Packages in transit between machines and people. One file is one labelled package — a project, an
+ecosystem, one ecosystem feature, or the companion profile.
 
-Written by `package-ecosystem-feature` (**"package feature [X]"**).
-Read by `unpackage-ecosystem-feature` (**"unpackage feature [X]"**, **"import feature [X]"**).
+Written by `export-package` (**"export [name]"**, **"package feature [X]"**).
+Read by `import-package` (**"import [name]"**, **"import migration"**, **"migration log"**).
 
 ---
 
@@ -12,98 +12,94 @@ Read by `unpackage-ecosystem-feature` (**"unpackage feature [X]"**, **"import fe
 
 ```
 migrations/
-  out/        packages exported from this machine, ready to send
-  in/         packages received, awaiting import
-  applied/    imported successfully — the record of what landed here
+  out/          packages exported from this machine — {id}.v{n}.pkg.md, every version kept
+  in/           packages received, awaiting import
+  applied/      imported packages
+  manifests/    {id}.yaml — what each whole-file import wrote, with hashes
+  ledger.md     one row per export or import, append only
 ```
 
-State directories rather than a flat folder, matching `brainstorming/` and `project-plans/`. A
-package moves `in/` → `applied/` on a successful import, so "what is still pending here" is
-answered by listing one directory.
+**All of it is local and git-ignored.** Packages can hold personal history; manifests and the ledger
+hold this machine's state. Only the folder skeleton (`.gitkeep`) is committed.
 
-`applied/` is an audit trail, not the source of truth. What is actually installed is recorded by
-the markers in the files themselves.
+## Kinds and audiences
+
+| Kind | Id | Carries |
+|------|----|---------|
+| `project` | `{slug}@project` | one `project-management/{slug}/` entry plus the plans, brainstorms and debug logs it links |
+| `ecosystem` | `{slug}@ecosystem` | the map, every feature note, and each documented member project in full |
+| `feature` | `{feature}@{ecosystem}` | one feature's note, map entries, each member's Overview and Components line |
+| `profile` | `profile@{user}` / `profile@shared` | `main/` — companion and user profile, preferences, sessions |
+
+Every export asks **for you, or to share?**
+
+- `self` — everything travels, including timelines, feedbacks and session history.
+- `share` — timelines, feedbacks, session history and user-profile details are stripped; a scan lists
+  likely personal data for you to review. A share profile is a template: names become
+  `{{USER_NAME}}` / `{{COMPANION_NAME}}`.
+
+Never in any kind: `brain/`, `notes/`, `learning/`, `career/`, `context/`, and machine-bound data —
+`Local Path`, the map's `Location`, absence markers, package markers. `git_origin` travels instead.
 
 ## File shape
 
-One self-contained Markdown file, `{feature}@{ecosystem}.pkg.md` — readable by a human with no
-memory-core at all, and diffable in git.
-
-```markdown
+````markdown
 ---
-package: dep@acme
-version: 2
-exported: 2026-09-03
-ecosystem:
-  slug: acme
-  label: "Acme Inc — POS platform"
-feature:
-  slug: dep
-  label: "DEP (Device Enrollment Program)"
-members:
-  - {project: acme-admin, component: DEP, git_origin: "https://github.com/.../acme-admin.git"}
-non_members:
-  - {project: acme, evidence: "searched DeviceEnroll|Enrollment across *.dart, zero hits"}
+package: wikipetia@project
+kind: project
+audience: self
+version: 3
+exported: 2026-10-10
+format: 2
+source_install: "irfan@macbook"
 ---
 
-## note
-## map
-## overview: {project}
-## components: {project}
+## file: project-management/wikipetia/General.md
+
+```pkg
+# WikiPetia
+…
 ```
 
-`version` is **load-bearing** — it is what lets a re-import tell an update from a no-op. Bump it on
-every export of the same feature.
+## link: project-management/wikipetia/Plans/x.md -> project-plans/active/x.md
+````
 
-## What never travels
+Each section's content sits in a `pkg` fence longer than any backtick run inside it. Profile sections
+are `## section: main/main-memory.md#{heading}`. Feature packages use `## note`, `## map`,
+`## overview: {project}`, `## components: {project}`.
 
-| Left behind | Why |
-|-------------|-----|
-| `Local Path` in the Repositories table | True only on the exporting machine |
-| `_(not on this machine)_` absence markers | Local state written by a previous import |
-| `Timeline.md` entries | Session history, not knowledge |
-| Anything under `main/` | Companion memory, not project knowledge |
+**Format 1** — packages with no `format:` field, from before this change — are read as
+`kind: feature`, `audience: share`.
 
-`git_origin` travels in its place. It is the portable half of the Repositories table, and the only
-thing that lets the receiving user recognise which repo they are being asked to locate.
+`version` is load-bearing: it is what lets a re-import tell an update from a no-op.
 
-## Owned regions
+## Re-import
 
-An imported package owns specific regions of the files it wrote, and nothing else:
+Whole files and profile sections are recorded in `manifests/{id}.yaml` with a hash of what was
+written (machine columns ignored). Feature packages keep in-file markers instead, because they write
+regions inside files this machine owns:
 
 ```markdown
 <!-- pkg:dep@acme v2 sha:ab12cd34 -->
-- **DEP (Device Enrollment Program)** — Admin drives · Middleware owns the data
+…
 <!-- /pkg:dep@acme -->
 ```
 
-The feature note is wholly owned, so it carries the same provenance in its frontmatter instead:
-
-```yaml
-source: {package: dep@acme, version: 2, imported: 2026-09-03, sha: ab12cd34}
-```
-
-`sha` is the first 8 characters of the SHA-256 of the region, with trailing whitespace and
-surrounding blank lines normalised away. Re-import compares it before writing:
-
-| Region hash | Incoming version | Action |
+| Local hash vs record | Incoming version | Action |
 |---|---|---|
-| matches the marker | newer | replace the region |
-| matches the marker | same | no-op |
-| matches the marker | older | skip, warn |
+| matches | newer | replace |
+| matches | same, identical | no-op |
+| matches | older | skip, warn |
 | **differs** | any | **conflict** — never overwritten; you choose |
 
-A hash that no longer matches means the region was edited here after import. That is the one case
-that always stops and asks, because overwriting it would destroy work silently.
+`Timeline.md` is the exception: new dated sections are merged in, existing ones are never touched,
+and local growth is never a conflict.
 
-`health_check` reports the same conditions: `package_region_drift`, `package_marker_unclosed`, and
-`package_orphan_marker`.
+`health_check` reports `package_region_drift`, `package_marker_unclosed`, `package_orphan_marker`
+(judged against the ledger) and `package_manifest_drift`.
 
-## Import never creates projects
+## The helper
 
-Import asks where each member repo lives on this machine and records the answer. It does **not**
-scaffold `project-management/{project}/` — that is `document-project`'s job. A member that is not
-on this machine is marked `_(not on this machine)_` in the map and skipped.
-
-Run `document-project` for it later and re-import: everything already applied is a no-op, and the
-Overview lands where it now belongs.
+`plugins/violet-skills/skills/import-package/scripts/pkgtool.py` does everything that must be exact —
+validation, packing, stripping, scanning, hashing, planning, timeline merge, the ledger. Run it with
+`--help` for the command list.
