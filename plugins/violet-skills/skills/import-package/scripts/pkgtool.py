@@ -9,12 +9,14 @@ Run from the memory root:  python3 plugins/violet-skills/skills/import-package/s
   strip FILE [--column NAME ...] [--write] remove machine-bound data
   scan FILE                                list likely personal data
   profile-headings FILE --companion NAME   classify `## ` headings companion|user
+  profile-share FILE --template T --user N --companion N --out-dir DIR
+                                           stage main-memory.md for a share profile, names removed
   placeholders FILE --user N --companion N [--write]
   next-version ID [--root DIR]
   pack --spec SPEC.json --staging DIR --out FILE
-  plan PACKAGE [--root DIR] [--rename OLD=NEW ...]
-  extract PACKAGE TARGET [--root DIR] [--rename OLD=NEW ...]
-  merge-timeline PACKAGE TARGET [--root DIR] [--rename OLD=NEW ...]
+  plan PACKAGE [--root DIR] [--rename OLD=NEW ...] [--fill KEY=VALUE ...]
+  extract PACKAGE TARGET [--root DIR] [--rename OLD=NEW ...] [--fill KEY=VALUE ...]
+  merge-timeline PACKAGE TARGET [--root DIR] [--rename OLD=NEW ...] [--fill KEY=VALUE ...]
   record ID --version N --targets T [T ...] [--root DIR] [--date YYYY-MM-DD]
   log --dir in|out --package ID --kind K --audience A --version N --result R [--note T] [--root DIR] [--date D]
 
@@ -51,8 +53,17 @@ def _renames(pairs) -> dict:
     return out
 
 
-def _package(path: str):
-    return pkgformat.read_package(_read(path))
+def _package(path: str, fills=None):
+    """Read a package; `--fill USER_NAME=Sam` replaces {{USER_NAME}} in every section path and body."""
+    head, sections = pkgformat.read_package(_read(path))
+    for pair in fills or []:
+        key, sep, value = pair.partition("=")
+        if not sep or not key:
+            raise PackageError(f"--fill expects KEY=VALUE, got {pair!r}")
+        for s in sections:
+            s.arg = s.arg.replace("{{" + key + "}}", value)
+            s.content = s.content.replace("{{" + key + "}}", value)
+    return head, sections
 
 
 def cmd_validate(a):
@@ -95,6 +106,18 @@ def cmd_profile_headings(a):
         print(f"{pkgclean.classify_profile_heading(heading, a.companion)}\t{heading}")
 
 
+def cmd_profile_share(a):
+    sections, unknown = pkgstate.share_profile_sections(
+        _read(a.file), _read(a.template), user=a.user, companion=a.companion)
+    out = Path(a.out_dir) / "main"
+    out.mkdir(parents=True, exist_ok=True)
+    for heading, text in sections.items():
+        (out / f"main-memory.md#{heading}").write_text(text, encoding="utf-8")
+    print(f"staged {len(sections)} section(s)")
+    for heading in unknown:
+        print(f"unknown: {heading}")
+
+
 def cmd_placeholders(a):
     text = pkgclean.placeholders(_read(a.file), user=a.user, companion=a.companion)
     if a.write:
@@ -121,13 +144,13 @@ def cmd_pack(a):
 
 
 def cmd_plan(a):
-    h, sections = _package(a.package)
+    h, sections = _package(a.package, a.fill)
     for item in pkgstate.plan(Path(a.root), h, sections, _renames(a.rename)):
         print(f"{item.action}\t{item.target}\t{item.reason}")
 
 
 def cmd_extract(a):
-    h, sections = _package(a.package)
+    h, sections = _package(a.package, a.fill)
     pkgstate.check_target(h.kind, a.target)
     section = pkgstate.find_section(sections, a.target, _renames(a.rename))
     pkgstate.write_target(Path(a.root), a.target, section.content)
@@ -135,7 +158,7 @@ def cmd_extract(a):
 
 
 def cmd_merge_timeline(a):
-    h, sections = _package(a.package)
+    h, sections = _package(a.package, a.fill)
     pkgstate.check_target(h.kind, a.target)
     incoming = pkgstate.find_section(sections, a.target, _renames(a.rename)).content
     root = Path(a.root)
@@ -182,6 +205,12 @@ def build_parser() -> argparse.ArgumentParser:
     sp = add("profile-headings", cmd_profile_headings)
     sp.add_argument("file")
     sp.add_argument("--companion", required=True)
+    sp = add("profile-share", cmd_profile_share)
+    sp.add_argument("file")
+    sp.add_argument("--template", required=True)
+    sp.add_argument("--user", required=True)
+    sp.add_argument("--companion", required=True)
+    sp.add_argument("--out-dir", required=True)
     sp = add("placeholders", cmd_placeholders)
     sp.add_argument("file")
     sp.add_argument("--user", required=True)
@@ -202,6 +231,7 @@ def build_parser() -> argparse.ArgumentParser:
             sp.add_argument("target")
         sp.add_argument("--root", default=".")
         sp.add_argument("--rename", action="append")
+        sp.add_argument("--fill", action="append")
     sp = add("record", cmd_record)
     sp.add_argument("id")
     sp.add_argument("--version", type=int, required=True)

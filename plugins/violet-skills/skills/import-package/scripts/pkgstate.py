@@ -12,7 +12,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-from pkgclean import MACHINE_COLUMNS, drop_columns
+from pkgclean import MACHINE_COLUMNS, classify_profile_heading, drop_columns, placeholders
 from pkgformat import Header, PackageError, Section
 
 ALLOWED_ROOTS = {
@@ -234,6 +234,40 @@ def write_target(root: Path, target: str, content: str) -> None:
     else:
         text = text.replace(current.rstrip("\n"), content.rstrip("\n"), 1)
     f.write_text(text, encoding="utf-8")
+
+
+TEMPLATE_FENCE = re.compile(r"^```markdown\n(.*?)^```", re.M | re.S)
+USER_TEMPLATE = {"Identity & Relationship": "Identity & Relationship",
+                 "{user} Profile": "[YOUR_NAME] Profile",
+                 "Relationship Context": "Relationship Context"}
+
+
+def share_profile_sections(memory: str, template: str, user: str, companion: str) -> tuple[dict, list]:
+    """main-memory.md split for a share profile: {target heading: section text}, plus unknown headings.
+
+    Headings and bodies carry {{USER_NAME}} / {{COMPANION_NAME}} instead of names. Companion sections
+    keep their body; user sections are replaced by the matching section of the template (the
+    ```markdown block in main-memory-format.md); a heading neither table knows is blanked and reported.
+    """
+    fenced = TEMPLATE_FENCE.search(template)
+    tmpl = heading_sections(fenced.group(1) if fenced else template)
+    user_map = {k.replace("{user}", user.strip()): v for k, v in USER_TEMPLATE.items()}
+    out: dict[str, str] = {}
+    unknown: list[str] = []
+    for heading, body in heading_sections(memory).items():
+        target = placeholders(heading, user, companion)
+        if classify_profile_heading(heading, companion) == "companion":
+            out[target] = placeholders(body, user, companion)
+            continue
+        key = user_map.get(heading)
+        text = tmpl.get(key) if key else None
+        if key is None:
+            unknown.append(heading)
+        if text:
+            out[target] = text.replace("[AI_NAME]", "{{COMPANION_NAME}}").replace("[YOUR_NAME]", "{{USER_NAME}}")
+        else:
+            out[target] = f"## {target}\n\n<!-- left blank in a shared profile -->\n"
+    return out, unknown
 
 
 DATE_HEADER = re.compile(r"^## (\d{4}-\d{2}-\d{2})\b.*$", re.M)

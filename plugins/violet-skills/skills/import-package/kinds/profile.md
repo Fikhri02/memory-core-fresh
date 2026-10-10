@@ -21,18 +21,15 @@ Names come from `memory-core.yaml` → `identity.name` (companion) and `identity
 Never staged: `main/README.md`, `main-memory-format.md`, `session-format.md`, `session-brief-core.md`
 — they ship with the repo.
 
-- [ ] Run `PKG profile-headings main/main-memory.md --companion "{companion}"`. Every heading marked
-      `user` that is not one of `Identity & Relationship`, `{user} Profile`, `Relationship Context` is
-      **unknown** — list it in the manifest; it is treated as user (the safe default)
-- [ ] For each heading, write the section (heading line through the line before the next `## `) to
-      `migrations/.staging/{id}/main/main-memory.md#{heading}`:
-  - `self`: the section as-is
-  - `share`, `companion`: the section, then `PKG placeholders {staged} --user "{user}" --companion "{companion}" --write`
-  - `share`, `user`: the matching section from `main/main-memory-format.md` — `Identity & Relationship`
-    → same heading; `{user} Profile` → `[YOUR_NAME] Profile`, renamed to `{{USER_NAME}} Profile`;
-    `Relationship Context` → same heading — with `[AI_NAME]` → `{{COMPANION_NAME}}` and
-    `[YOUR_NAME]` → `{{USER_NAME}}`. No template match: the heading line, a blank line, and
-    `<!-- left blank in a shared profile -->`
+- [ ] `self`: run `PKG profile-headings main/main-memory.md --companion "{companion}"` to list the
+      headings, then write each section (heading line through the line before the next `## `) as-is
+      to `migrations/.staging/{id}/main/main-memory.md#{heading}`
+- [ ] `share`: run
+      `PKG profile-share main/main-memory.md --template main/main-memory-format.md --user "{user}" --companion "{companion}" --out-dir migrations/.staging/{id}`.
+      It stages every section with **names removed from headings and bodies** — companion sections
+      keep their body; `Identity & Relationship`, `{user} Profile` and `Relationship Context` are
+      replaced by the template inside `main-memory-format.md`'s markdown block; any other `user`
+      heading is blanked. Each `unknown:` line it prints goes in the manifest
 - [ ] Stage the whole files the table allows for the audience; for `share`, run `PKG placeholders … --write` on each
 - [ ] For `share`: `PKG scan` every staged file
 - [ ] For `self`: warn once — "This file holds your personal history. Do not commit it to a repo or
@@ -53,8 +50,10 @@ Never staged: `main/README.md`, `main-memory-format.md`, `session-format.md`, `s
 
 - [ ] If `main/main-memory.md` does not exist, create it with
       `# {companion} - Main Memory` and `*Unified identity, relationship, and personality*` before
-      writing any section. In a share package, ask the user for both names first and substitute them
-      for `{{COMPANION_NAME}}` / `{{USER_NAME}}` in everything written
+      writing any section
+- [ ] **Share package:** ask for this install's user and companion names (from `memory-core.yaml`
+      `identity` when set) and pass `--fill USER_NAME={user} --fill COMPANION_NAME={companion}` to
+      every `plan` and `extract` call — section paths and bodies carry the placeholders
 - [ ] Run `PKG plan {package} --root .` and act per audience:
 
   **self**

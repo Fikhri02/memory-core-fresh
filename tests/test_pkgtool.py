@@ -589,6 +589,74 @@ class Ledger(TempRoot):
         self.assertEqual(5, pkgstate.next_version(self.root, "dep@acme"))
 
 
+MEMORY = """# Violet - Main Memory
+*Unified identity*
+
+## Identity & Relationship
+
+**I am Violet** - Jamla's companion.
+
+## Violet Profile
+
+Violet is curious.
+
+## Jamla Profile
+
+Jamla lives in Kuala Lumpur.
+
+## Core Purpose
+
+Help Jamla grow.
+
+## Pet Names
+
+Jamla calls me V.
+"""
+
+TEMPLATE = """# Sample
+
+```markdown
+# [AI_NAME] - Main Memory
+
+## Identity & Relationship
+
+**I am [AI_NAME]** - [YOUR_NAME]'s companion.
+
+## [YOUR_NAME] Profile
+
+### Personal Info
+- Location: [CITY]
+```
+"""
+
+
+class ShareProfile(unittest.TestCase):
+    def setUp(self):
+        self.sections, self.unknown = pkgstate.share_profile_sections(MEMORY, TEMPLATE, "Jamla", "Violet")
+
+    def test_no_name_survives_in_targets_or_bodies(self):
+        blob = "\n".join(list(self.sections) + list(self.sections.values()))
+        self.assertNotIn("Jamla", blob)
+        self.assertNotIn("Violet", blob)
+
+    def test_headings_become_placeholders(self):
+        self.assertEqual(["Identity & Relationship", "{{COMPANION_NAME}} Profile",
+                          "{{USER_NAME}} Profile", "Core Purpose", "Pet Names"], list(self.sections))
+
+    def test_user_sections_come_from_the_fenced_template(self):
+        self.assertIn("- Location: [CITY]", self.sections["{{USER_NAME}} Profile"])
+        self.assertNotIn("Kuala Lumpur", "".join(self.sections.values()))
+        self.assertIn("{{USER_NAME}}'s companion", self.sections["Identity & Relationship"])
+
+    def test_companion_sections_keep_their_body(self):
+        self.assertIn("{{COMPANION_NAME}} is curious.", self.sections["{{COMPANION_NAME}} Profile"])
+
+    def test_unknown_heading_is_blanked_and_reported(self):
+        self.assertEqual(["Pet Names"], self.unknown)
+        self.assertIn("left blank in a shared profile", self.sections["Pet Names"])
+        self.assertNotIn("calls me V", self.sections["Pet Names"])
+
+
 class Cli(TempRoot):
     def run_tool(self, *args, cwd=None):
         return subprocess.run([sys.executable, str(SCRIPTS / "pkgtool.py"), *map(str, args)],
@@ -681,6 +749,31 @@ class Cli(TempRoot):
         self.assertEqual("companion\tViolet Profile\nuser\tJamla Profile", r.stdout.strip())
         r = self.run_tool("sha", mem, "--section", "Violet Profile")
         self.assertEqual(pkgstate.region_sha("## Violet Profile\nx\n"), r.stdout.strip())
+
+    def test_profile_share_writes_staging_and_fill_restores_names(self):
+        mem = write(self.root, "src/main-memory.md", MEMORY)
+        tpl = write(self.root, "src/format.md", TEMPLATE)
+        stage = self.root / "stage"
+        r = self.run_tool("profile-share", mem, "--template", tpl, "--user", "Jamla",
+                          "--companion", "Violet", "--out-dir", stage)
+        self.assertEqual(0, r.returncode, r.stderr)
+        self.assertIn("unknown: Pet Names", r.stdout)
+        self.assertTrue((stage / "main" / "main-memory.md#{{USER_NAME}} Profile").is_file())
+        spec = self.root / "p.json"
+        spec.write_text(json.dumps({"header": header(kind="profile", package="profile@shared",
+                                                     audience="share"), "header_extra": "", "links": []}))
+        out = self.root / "profile@shared.v1.pkg.md"
+        self.assertEqual(0, self.run_tool("pack", "--spec", spec, "--staging", stage, "--out", out).returncode)
+        dst = self.root / "dst"
+        write(dst, "main/main-memory.md", "# Iris - Main Memory\n\n## Iris Profile\n\nMine.\n")
+        r = self.run_tool("plan", out, "--root", dst, "--fill", "USER_NAME=Sam", "--fill", "COMPANION_NAME=Iris")
+        rows = dict(l.split("\t")[1::-1] for l in r.stdout.strip().splitlines())
+        self.assertEqual("conflict", rows["main/main-memory.md#Iris Profile"])
+        self.assertEqual("new", rows["main/main-memory.md#Sam Profile"])
+        r = self.run_tool("extract", out, "main/main-memory.md#Sam Profile", "--root", dst,
+                          "--fill", "USER_NAME=Sam", "--fill", "COMPANION_NAME=Iris")
+        self.assertEqual(0, r.returncode, r.stderr)
+        self.assertIn("## Sam Profile", (dst / "main/main-memory.md").read_text())
 
     def test_next_version(self):
         self.make_package()
