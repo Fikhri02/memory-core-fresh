@@ -40,6 +40,10 @@ Feature packages write **regions inside files this machine owns**, so they keep 
 
 Format-1 packages (no `format:` field) are read as this kind.
 
+- [ ] Run `PKG feature-targets {package}`. It validates the ecosystem, feature, every member slug and
+      component name, and prints the **only** paths this import may write (`map`, `note`, and per
+      member `overview` and `components`). If it refuses, the package is refused. **Never build a
+      path from package text yourself** — use these lines
 - [ ] Resolve the ecosystem: `ecosystem/{slug}/` exists → use it; absent → plan to create
       `ecosystem/{slug}/map.md` from the package's `ecosystem` and `members` blocks. This is the
       intended path, not a fallback

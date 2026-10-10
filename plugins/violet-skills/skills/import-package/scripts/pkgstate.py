@@ -18,9 +18,16 @@ from pkgformat import Header, PackageError, Section
 ALLOWED_ROOTS = {
     "project": ("project-management/", "project-plans/", "brainstorming/", "debugging/"),
     "ecosystem": ("ecosystem/", "project-management/", "project-plans/", "brainstorming/", "debugging/"),
+    "feature": ("ecosystem/", "project-management/"),
 }
 PROFILE_FILES = ("main/main-memory.md", "main/preferences.md", "main/projects-context.md",
                  "main/current-session.md", "main/session-archive.md")
+SHARE_EXCLUDED_FILES = ("main/current-session.md", "main/session-archive.md", "main/projects-context.md")
+# Package paths end up in commands an agent runs, so only plain filename characters are accepted.
+SAFE_SEGMENT = re.compile(r"^[A-Za-z0-9 ._@()&,+-]+$")
+UNSAFE_HEADING = re.compile(r'[\x00-\x1f$`"\\;|<>]')
+LINK_PATH = re.compile(r"^project-management/[a-z0-9][a-z0-9-]*/(Plans|Debugging)/[^/]+\.md$")
+MAP_PATH = re.compile(r"^ecosystem/[^/]+/map\.md$")
 
 
 def region_sha(content: str) -> str:
@@ -29,34 +36,39 @@ def region_sha(content: str) -> str:
     return hashlib.sha256(normalised.encode("utf-8")).hexdigest()[:8]
 
 
-def comparable(text: str) -> str:
-    """Text as compared across machines — machine-bound table columns removed, table padding normalised."""
-    return drop_columns(text, MACHINE_COLUMNS, normalise=True)[0]
+def comparable(text: str, target: str = "") -> str:
+    """Text as compared across machines — machine-bound columns removed, table padding normalised.
+    `Location` is machine-bound only in an ecosystem map; everywhere else it is content."""
+    columns = MACHINE_COLUMNS if MAP_PATH.match(target.partition("#")[0]) else ("Local Path",)
+    return drop_columns(text, columns, normalise=True)[0]
 
 
 FENCE = re.compile(r"^(```|~~~)")
 
 
-def heading_sections(text: str) -> dict[str, str]:
-    """`## ` sections keyed by heading text; each value runs from its heading line to the next.
-    Fenced blocks are never split."""
-    out: dict[str, str] = {}
+def heading_spans(text: str) -> dict[str, tuple[int, int]]:
+    """Line spans [start, end) of each `## ` section, first occurrence wins. Fences are never split."""
+    spans: dict[str, tuple[int, int]] = {}
+    lines = text.split("\n")
     name: str | None = None
-    buf: list[str] = []
+    start = 0
     in_fence = False
-    for line in text.split("\n"):
+    for i, line in enumerate(lines):
         if FENCE.match(line):
             in_fence = not in_fence
         if not in_fence and line.startswith("## "):
             if name is not None:
-                out[name] = "\n".join(buf).rstrip("\n") + "\n"
-            name, buf = line[3:].strip(), [line]
-            continue
-        if name is not None:
-            buf.append(line)
+                spans.setdefault(name, (start, i))
+            name, start = line[3:].strip(), i
     if name is not None:
-        out[name] = "\n".join(buf).rstrip("\n") + "\n"
-    return out
+        spans.setdefault(name, (start, len(lines)))
+    return spans
+
+
+def heading_sections(text: str) -> dict[str, str]:
+    """`## ` sections keyed by heading text; each value runs from its heading line to the next."""
+    lines = text.split("\n")
+    return {name: "\n".join(lines[a:b]).rstrip("\n") + "\n" for name, (a, b) in heading_spans(text).items()}
 
 
 def target_text(root: Path, target: str) -> str | None:
@@ -68,13 +80,16 @@ def target_text(root: Path, target: str) -> str | None:
     return heading_sections(text).get(heading) if heading else text
 
 
-def check_target(kind: str, target: str) -> None:
-    path = target.partition("#")[0]
-    parts = PurePosixPath(path).parts
-    if (not path or "\\" in path or path.startswith("/") or ".." in parts
-            or re.match(r"^[A-Za-z]:", path)):
+def check_target(kind: str, target: str, audience: str = "self") -> None:
+    path, _, heading = target.partition("#")
+    segments = path.split("/")
+    if (not path or path.startswith("/") or re.match(r"^[A-Za-z]:", path)
+            or any(seg in ("", ".", "..") or seg.startswith("-") or not SAFE_SEGMENT.match(seg)
+                   for seg in segments)):
         raise PackageError(f"unsafe path in package: {target!r}")
-    if path.startswith("project-management/_"):
+    if heading and UNSAFE_HEADING.search(heading):
+        raise PackageError(f"unsafe heading in package: {target!r}")
+    if segments[0] == "project-management" and len(segments) > 1 and segments[1].startswith("_"):
         raise PackageError(f"package may not write infrastructure folder {path!r}")
     if kind == "profile":
         ok = path in PROFILE_FILES
@@ -82,6 +97,17 @@ def check_target(kind: str, target: str) -> None:
         ok = any(path.startswith(r) for r in ALLOWED_ROOTS.get(kind, ()))
     if not ok:
         raise PackageError(f"a {kind} package may not write {path!r}")
+    if audience == "share" and (path in SHARE_EXCLUDED_FILES or segments[-1] == "Timeline.md"
+                                or "Feedbacks" in segments[:-1]):
+        raise PackageError(f"a share package may not carry {path!r} — it is personal history")
+
+
+def check_section(target: str, content: str) -> None:
+    """A profile section must be exactly its own `## ` section — nothing that would add or shadow another."""
+    heading = target.partition("#")[2]
+    first = content.split("\n", 1)[0].rstrip()
+    if first != f"## {heading}" or list(heading_sections(content)) != [heading]:
+        raise PackageError(f"section {target!r} must hold exactly one `## {heading}` section")
 
 
 @dataclass
@@ -136,7 +162,7 @@ def record(root: Path, package_id: str, version: int, imported: str, targets) ->
         text = target_text(root, t)
         if text is None:
             raise PackageError(f"cannot record {t!r} — it does not exist under {root}")
-        m.entries[t] = region_sha(comparable(text))
+        m.entries[t] = region_sha(comparable(text, t))
     write_manifest(path, m)
     return m
 
@@ -160,22 +186,34 @@ def merge_timeline_needed(target: str) -> bool:
     return target.rsplit("/", 1)[-1] == "Timeline.md"
 
 
+def timeline_differences(local: str, incoming: str) -> list[str]:
+    """Dated headers present on both sides whose bodies differ."""
+    mine = {h: body for _, h, body in _blocks(local)[1]}
+    return [h[3:] for _, h, body in _blocks(incoming)[1]
+            if h in mine and region_sha(mine[h]) != region_sha(body)]
+
+
 def _classify(root: Path, header: Header, manifest: Manifest | None, target: str, incoming: str) -> PlanItem:
     local = target_text(root, target)
     if local is None:
         return PlanItem("new", target, "not present here")
-    local_sha = region_sha(comparable(local))
-    if local_sha == region_sha(comparable(incoming)):
+    local_sha = region_sha(comparable(local, target))
+    if local_sha == region_sha(comparable(incoming, target)):
         return PlanItem("unchanged", target, "identical")
     if merge_timeline_needed(target):
-        if merge_timeline(local, incoming) is local:
-            return PlanItem("unchanged", target, "no new dated sections")
-        return PlanItem("merge-timeline", target, "new dated sections added; existing ones untouched")
+        differs = timeline_differences(local, incoming)
+        note = f"; same date differs on both sides: {', '.join(differs)} — review by hand" if differs else ""
+        if merge_timeline(local, incoming) is not local:
+            return PlanItem("merge-timeline", target, "new dated sections added; existing ones untouched" + note)
+        if differs:
+            return PlanItem("timeline-differs", target,
+                            f"same date differs on both sides: {', '.join(differs)} — review by hand")
+        return PlanItem("unchanged", target, "no new dated sections")
     recorded = manifest.entries.get(target) if manifest else None
     if recorded is None:
         return PlanItem("conflict", target, "exists here with different content and no import record")
     if local_sha != recorded:
-        return PlanItem("conflict", target, f"edited here since import of v{manifest.version}")
+        return PlanItem("conflict", target, f"edited here since the last import (v{manifest.version} recorded)")
     if header.version > manifest.version:
         return PlanItem("update", target, f"v{manifest.version} -> v{header.version}")
     if header.version < manifest.version:
@@ -184,30 +222,54 @@ def _classify(root: Path, header: Header, manifest: Manifest | None, target: str
     return PlanItem("conflict", target, f"same version v{header.version} but different content")
 
 
+def _classify_link(root: Path, link: str, home: str) -> PlanItem:
+    f = root / link
+    if f.is_symlink():
+        if f.resolve() == (root / home).resolve():
+            return PlanItem("unchanged", f"{link} -> {home}", "link already in place")
+        return PlanItem("link", f"{link} -> {home}", "replace symlink")
+    if f.exists():
+        return PlanItem("conflict", f"{link} -> {home}", "a regular file is here, not a link")
+    return PlanItem("link", f"{link} -> {home}", "recreate symlink")
+
+
+def parse_link(arg: str, renames: dict | None) -> tuple[str, str]:
+    link, sep, home = arg.partition(" -> ")
+    if not sep:
+        raise PackageError(f"malformed link section: {arg!r}")
+    return apply_renames(link.strip(), renames), apply_renames(home.strip(), renames)
+
+
 def plan(root: Path, header: Header, sections: list[Section], renames: dict | None = None) -> list[PlanItem]:
     if header.kind == "feature":
-        raise PackageError("feature packages use in-file markers — follow kinds/feature.md, not plan")
-    items: list[PlanItem] = []
+        raise PackageError("feature packages use in-file markers — use feature-targets and kinds/feature.md")
     checked: list[tuple[Section, str]] = []
+    files: set[str] = set()
     for s in sections:                      # validate every path before touching the disk
-        if s.type == "link":
-            link, sep, home = s.arg.partition(" -> ")
-            if not sep:
-                raise PackageError(f"malformed link section: {s.arg!r}")
-            link, home = apply_renames(link.strip(), renames), apply_renames(home.strip(), renames)
-            check_target(header.kind, link)
-            check_target(header.kind, home)
-            checked.append((s, f"{link} -> {home}"))
-        elif s.type in ("file", "section"):
+        if s.type in ("file", "section"):
             target = apply_renames(s.arg, renames)
-            check_target(header.kind, target)
+            check_target(header.kind, target, header.audience)
+            if s.type == "section":
+                check_section(target, s.content)
+            files.add(target)
             checked.append((s, target))
-        else:
+        elif s.type != "link":
             raise PackageError(f"`## {s.type}` does not belong in a {header.kind} package")
+    for s in sections:
+        if s.type == "link":
+            link, home = parse_link(s.arg, renames)
+            check_target(header.kind, link, header.audience)
+            check_target(header.kind, home, header.audience)
+            if not LINK_PATH.match(link):
+                raise PackageError(f"link {link!r} must be a .md file under a project's Plans/ or Debugging/")
+            if home not in files or not home.endswith(".md"):
+                raise PackageError(f"link {link!r} points at {home!r}, which the package does not carry")
+            checked.append((s, f"{link} -> {home}"))
     manifest = read_manifest(manifest_path(root, header.package))
+    items: list[PlanItem] = []
     for s, target in checked:
         if s.type == "link":
-            items.append(PlanItem("link", target, "recreate symlink"))
+            items.append(_classify_link(root, *target.split(" -> ")))
         else:
             items.append(_classify(root, header, manifest, target, s.content))
     return items
@@ -220,20 +282,105 @@ def find_section(sections: list[Section], target: str, renames: dict | None = No
     raise PackageError(f"package has no section for {target!r}")
 
 
-def write_target(root: Path, target: str, content: str) -> None:
+def _inside(root: Path, path: Path, kind: str | None) -> None:
+    """Refuse a write whose real location — after following symlinks — leaves the memory root or
+    lands somewhere the kind may not write."""
+    real_root = root.resolve()
+    real = path.resolve()
+    try:
+        rel = real.relative_to(real_root).as_posix()
+    except ValueError:
+        raise PackageError(f"{path} resolves outside the memory root ({real})")
+    if kind:
+        check_target(kind, rel)
+
+
+def write_target(root: Path, target: str, content: str, kind: str | None = None) -> None:
     path, _, heading = target.partition("#")
     f = root / path
     f.parent.mkdir(parents=True, exist_ok=True)
+    _inside(root, f, kind)
     if not heading:
         f.write_text(content, encoding="utf-8")
         return
     text = f.read_text(encoding="utf-8").replace("\r\n", "\n") if f.is_file() else ""
-    current = heading_sections(text).get(heading)
-    if current is None:
-        text = (text.rstrip("\n") + "\n\n" if text.strip() else "") + content.rstrip("\n") + "\n"
+    span = heading_spans(text).get(heading)
+    new = content.rstrip("\n").split("\n")
+    if span is None:
+        text = (text.rstrip("\n") + "\n\n" if text.strip() else "") + "\n".join(new) + "\n"
     else:
-        text = text.replace(current.rstrip("\n"), content.rstrip("\n"), 1)
+        lines = text.split("\n")
+        a, b = span
+        trailing = len(lines[a:b]) - len("\n".join(lines[a:b]).rstrip("\n").split("\n"))
+        lines[a:b] = new + [""] * trailing
+        text = "\n".join(lines)
     f.write_text(text, encoding="utf-8")
+
+
+def make_link(root: Path, kind: str, link: str, home: str) -> None:
+    """Create `link` → absolute `home`, replacing only an existing symlink — never a real file."""
+    f = root / link
+    if f.exists() and not f.is_symlink():
+        raise PackageError(f"{link} is a regular file here — refusing to replace it with a link")
+    f.parent.mkdir(parents=True, exist_ok=True)
+    _inside(root, f.parent, kind)
+    target = (root / home).resolve()
+    _inside(root, target, kind)
+    if f.is_symlink():
+        f.unlink()
+    f.symlink_to(target)
+
+
+FEATURE_MEMBER = re.compile(r"^\s*-\s*\{(.*)\}\s*$")
+FLOW_FIELD = re.compile(r'(\w+):\s*("(?:[^"\\]|\\.)*"|[^,}]*)')
+SLUG = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+
+
+def feature_members(frontmatter: str) -> list[dict]:
+    members: list[dict] = []
+    inside = False
+    for line in frontmatter.split("\n"):
+        if re.match(r"^[a-z_]+:", line):
+            inside = line.startswith("members:")
+            continue
+        m = FEATURE_MEMBER.match(line) if inside else None
+        if m:
+            fields = {}
+            for key, raw in FLOW_FIELD.findall(m.group(1)):
+                raw = raw.strip()
+                fields[key] = json.loads(raw) if raw.startswith('"') else raw
+            members.append(fields)
+    return members
+
+
+def feature_targets(text: str) -> list[tuple[str, str]]:
+    """The only paths a feature import may write, derived from the package id and `members:` and
+    validated. Agents use this list; they never build a path from package text themselves."""
+    from pkgformat import FRONTMATTER, normalise_newlines, read_package
+    head, sections = read_package(text)
+    if head.kind != "feature":
+        raise PackageError(f"feature-targets needs a feature package, got {head.kind}")
+    feature, ecosystem = head.package.split("@")
+    members = feature_members(FRONTMATTER.match(normalise_newlines(text)).group(1))
+    if not members:
+        raise PackageError("feature package lists no `members`")
+    out = [("map", f"ecosystem/{ecosystem}/map.md"), ("note", f"ecosystem/{ecosystem}/features/{feature}.md")]
+    names = set()
+    for m in members:
+        project, component = m.get("project", ""), m.get("component", "")
+        if not SLUG.match(project):
+            raise PackageError(f"member project {project!r} is not a valid slug")
+        if not component or component in (".", "..") or component.startswith("-") or not SAFE_SEGMENT.match(component):
+            raise PackageError(f"member {project!r} has an unsafe component {component!r}")
+        names.add(project)
+        out += [("overview", f"project-management/{project}/Features/{component}/Overview.md"),
+                ("components", f"project-management/{project}/Components.md")]
+    for s in sections:
+        if s.type in ("overview", "components") and s.arg not in names:
+            raise PackageError(f"`## {s.type}: {s.arg}` names a project that is not a member")
+    for _, target in out:
+        check_target("feature", target)
+    return out
 
 
 TEMPLATE_FENCE = re.compile(r"^```markdown\n(.*?)^```", re.M | re.S)

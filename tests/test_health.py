@@ -254,7 +254,7 @@ class PackageManifestDrift(unittest.TestCase):
     def install(self, target, text, on_disk=None):
         path = target.partition("#")[0]
         write(self.root, path, on_disk if on_disk is not None else text)
-        sha = health.region_sha(health._drop_columns(text))
+        sha = health.region_sha(health._drop_columns(text, path))
         write(self.root, "migrations/manifests/w@project.yaml",
               MANIFEST.format(entries=f'  - {{path: {json.dumps(target)}, sha: {sha}}}'))
 

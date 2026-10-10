@@ -114,6 +114,10 @@ def validate_header(fields: dict) -> Header:
             raise PackageError(f"unknown `kind` {kind!r} — expected one of {', '.join(KINDS)}")
         if audience not in AUDIENCES:
             raise PackageError(f"unknown `audience` {audience!r} — expected self or share")
+        if kind == "feature":
+            for key in ("ecosystem", "feature", "members"):
+                if key not in fields:
+                    raise PackageError(f"feature package is missing `{key}`")
     package = fields["package"]
     if not id_matches(kind, package):
         raise PackageError(f"`package` {package!r} is not a valid {kind} id")

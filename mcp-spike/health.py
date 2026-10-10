@@ -262,9 +262,13 @@ def _norm_separator(cell: str) -> str:
     return f"{sep.group(1)}---{sep.group(2)}" if sep else cell
 
 
-def _drop_columns(text: str) -> str:
-    """Drop machine-bound table columns and normalise cell padding before hashing.
-    Mirrors pkgclean.drop_columns(text, MACHINE_COLUMNS, normalise=True)."""
+MAP_PATH = re.compile(r"^ecosystem/[^/]+/map\.md$")
+
+
+def _drop_columns(text: str, path: str = "") -> str:
+    """Drop machine-bound table columns and normalise cell padding before hashing. Mirrors
+    pkgstate.comparable: `Location` is machine-bound only in an ecosystem map."""
+    machine = MACHINE_COLUMNS if MAP_PATH.match(path) else {"local path"}
     lines = text.split("\n")
     out: list[str] = []
     i = 0
@@ -281,7 +285,7 @@ def _drop_columns(text: str) -> str:
         def cells(line: str) -> list[str]:
             return [c.strip() for c in CELL_SPLIT.split(line.strip())[1:-1]]
 
-        drop = {k for k, c in enumerate(cells(table[0])) if c.lower() in MACHINE_COLUMNS}
+        drop = {k for k, c in enumerate(cells(table[0])) if c.lower() in machine}
         out += ["| " + " | ".join(_norm_separator(c) for k, c in enumerate(cells(r)) if k not in drop) + " |"
                 for r in table]
         i = j
@@ -423,7 +427,7 @@ def package_manifest_drift(root: Path) -> list[Finding]:
                 out.append(Finding("package_manifest_drift", "low", path,
                                    f"`{package}` installed {target}, which has been removed here"))
                 continue
-            now = region_sha(_drop_columns(text))
+            now = region_sha(_drop_columns(text, path))
             if now != recorded:
                 out.append(Finding("package_manifest_drift", "medium", path,
                                    f"`{package}` {target} was edited here since import — the next "

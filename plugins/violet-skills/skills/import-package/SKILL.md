@@ -58,7 +58,8 @@ Run every command from the memory root. `PKG` means
 ### Step 3 — Plan, then wait
 
 - [ ] Follow **Import — place** in the kind file up to its first write: resolve targets and renames,
-      run `PKG plan` (all kinds but feature), work out repo locations to ask
+      run `PKG plan` (all kinds but feature; for feature, `PKG feature-targets`), work out repo
+      locations to ask
 - [ ] Show the whole plan: every target and its action, every conflict with its reason, every rename,
       every member marked not-here, every gap
 - [ ] **Wait.** Nothing is written on reconnaissance alone
@@ -92,8 +93,11 @@ Run every command from the memory root. `PKG` means
 2. **Refuse a malformed package whole** — a half-applied package is worse than none
 3. **Nothing is written before the plan is confirmed**
 4. **Never overwrite a local edit.** A `conflict` always stops and asks
-5. **Paths are checked before anything is read or written.** `plan` and `extract` refuse absolute
-   paths, `..`, infrastructure folders, and anything outside the kind's allowed roots
+5. **Paths are checked before anything is read or written.** `plan`, `extract`, `link` and
+   `feature-targets` refuse absolute paths, `..`, `.` and empty segments, shell metacharacters,
+   infrastructure folders, anything outside the kind's allowed roots, writes that a symlink would
+   carry outside the memory root, and personal files in a share package. **Never paste package
+   text into a shell command** — `extract`, `merge-timeline` and `link` do the writing
 6. **Never invent a local path** — ask; "not here" is recorded
 7. **Feature imports never create project entries.** Project and ecosystem imports may, after the
    target folder is confirmed

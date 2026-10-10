@@ -17,6 +17,9 @@ Run from the memory root:  python3 plugins/violet-skills/skills/import-package/s
   plan PACKAGE [--root DIR] [--rename OLD=NEW ...] [--fill KEY=VALUE ...]
   extract PACKAGE TARGET [--root DIR] [--rename OLD=NEW ...] [--fill KEY=VALUE ...]
   merge-timeline PACKAGE TARGET [--root DIR] [--rename OLD=NEW ...] [--fill KEY=VALUE ...]
+  link PACKAGE LINK [--root DIR] [--rename OLD=NEW ...]
+                                           create one planned symlink (never replaces a real file)
+  feature-targets PACKAGE                  the only paths a feature import may write, validated
   record ID --version N --targets T [T ...] [--root DIR] [--date YYYY-MM-DD]
   log --dir in|out --package ID --kind K --audience A --version N --result R [--note T] [--root DIR] [--date D]
 
@@ -151,22 +154,44 @@ def cmd_plan(a):
 
 def cmd_extract(a):
     h, sections = _package(a.package, a.fill)
-    pkgstate.check_target(h.kind, a.target)
+    pkgstate.check_target(h.kind, a.target, h.audience)
     section = pkgstate.find_section(sections, a.target, _renames(a.rename))
-    pkgstate.write_target(Path(a.root), a.target, section.content)
+    if section.type == "section":
+        pkgstate.check_section(a.target, section.content)
+    pkgstate.write_target(Path(a.root), a.target, section.content, kind=h.kind)
     print(f"wrote {a.target}")
+
+
+def cmd_link(a):
+    h, sections = _package(a.package)
+    renames = _renames(a.rename)
+    items = pkgstate.plan(Path(a.root), h, sections, renames)   # validates every link and home
+    for item in items:
+        link, sep, home = item.target.partition(" -> ")
+        if sep and link == a.link:
+            if item.action == "conflict":
+                raise PackageError(f"{link}: {item.reason}")
+            pkgstate.make_link(Path(a.root), h.kind, link, home)
+            print(f"linked {link} -> {home}")
+            return
+    raise PackageError(f"package has no link at {a.link!r}")
+
+
+def cmd_feature_targets(a):
+    for role, target in pkgstate.feature_targets(_read(a.package)):
+        print(f"{role}\t{target}")
 
 
 def cmd_merge_timeline(a):
     h, sections = _package(a.package, a.fill)
-    pkgstate.check_target(h.kind, a.target)
+    pkgstate.check_target(h.kind, a.target, h.audience)
     incoming = pkgstate.find_section(sections, a.target, _renames(a.rename)).content
     root = Path(a.root)
     local = pkgstate.target_text(root, a.target) or ""
     merged = pkgstate.merge_timeline(local, incoming)
     added = len(pkgstate.DATE_HEADER.findall(merged)) - len(pkgstate.DATE_HEADER.findall(local))
     if merged is not local:
-        pkgstate.write_target(root, a.target, merged)
+        pkgstate.write_target(root, a.target, merged, kind=h.kind)
     print(f"added {added} section(s)")
 
 
@@ -232,6 +257,12 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--root", default=".")
         sp.add_argument("--rename", action="append")
         sp.add_argument("--fill", action="append")
+    sp = add("link", cmd_link)
+    sp.add_argument("package")
+    sp.add_argument("link")
+    sp.add_argument("--root", default=".")
+    sp.add_argument("--rename", action="append")
+    add("feature-targets", cmd_feature_targets).add_argument("package")
     sp = add("record", cmd_record)
     sp.add_argument("id")
     sp.add_argument("--version", type=int, required=True)
