@@ -61,9 +61,9 @@ Stage into `migrations/.staging/{id}/`, mirroring each file's path from the memo
 
 - [ ] **Repositories.** After `General.md` is written or updated, ask for each row of its
       Repositories table, showing the `git_origin`: "Where is this repo on this machine? (path, or
-      'not here')". Add a `Local Path` column back to that table with the answers; "not here" is
-      written as `_(not on this machine)_`. Machine columns are ignored by comparison, so this is not
-      a local edit
+      'not here')". Record each answer in `device/paths.md` keyed by the git origin
+      (`sync_device.set_path`; "not here" is recorded as `not here`). Never add a `Local Path` column
+      back to `General.md` — paths are machine-bound and would fight every sync
 - [ ] **Record** every target that was written (`new`, `update`, take-incoming, `merge-timeline`) or
       `unchanged`: `PKG record {id} --version {v} --targets {targets…}`. **Never record a kept-local
       file** — its local edits would become the baseline and the next import would overwrite them

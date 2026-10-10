@@ -39,8 +39,9 @@ empty for undocumented members.
 - [ ] Run `PKG plan {package} --root . [--rename …]` once and act on each line using the table in
       `kinds/project.md`
 - [ ] **Map Location column.** After `map.md` is written, add the `Location` column back to its Members
-      table: `→ General.md` for documented members now present here; for undocumented members ask for
-      a path, or write `_(not on this machine)_`. Bump the map's `updated:` to today
+      table: `→ General.md` for documented members; for undocumented members ask for a path and
+      record it in `device/paths.md` (or `not here`), writing `→ device/paths.md` in the map — never
+      the path itself. Bump the map's `updated:` to today
 - [ ] **Repositories** for each member's `General.md`, as in `kinds/project.md`
 - [ ] **Record** written and unchanged targets with `PKG record` — never kept-local ones
 - [ ] A member present in the package but declined by the user is reported in the ledger note as skipped

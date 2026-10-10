@@ -25,7 +25,7 @@ Then open this folder in Claude Code and type your companion's name.
 
 ## What You Get
 
-### 26 skills
+### 27 skills
 
 | Skill | Trigger | What it does |
 |-------|---------|--------------|
@@ -55,6 +55,7 @@ Then open this folder in Claude Code and type your companion's name.
 | `brain` | `"brain on [topic]"`, `"save brain"` | Accumulates theoretical thinking as topic files under `brain/` — builds nothing |
 | `brain-recall` | `"what do I think about [topic]"`, `"list brain"` | Reads the brain — lookup, browse, search, project view, health. Never writes |
 | `design-preferences` | any UI work, `"seed design"`, `"rank palettes"`, `"harvest design"` | Your design taste by layer (general · website · web-app · mobile): checks UI before it is shown, files rules from your reactions, seeds contrasting directions, ranks palettes and fonts 1–10 |
+| `sync-memory` | `"sync setup"`, `"sync"`, `"sync status"`, `"follow project [X]"` | Keeps one memory across your laptops through a private GitHub repo: core always, projects by choice, a question only where both laptops changed the same thing |
 
 ### Platform support
 
@@ -78,7 +79,7 @@ memory-core/
   AGENTS.md                   Codex entry point (generated)
 
   adapters/                   spec -> platform prompt generators
-  plugins/violet-skills/      26 SKILL.md files — hand-written, canonical for Claude Code
+  plugins/violet-skills/      27 SKILL.md files — hand-written, canonical for Claude Code
   _templates/main/            placeholder memory files, rendered into main/ by setup
 
   context/                    always-on memory modules — the folder IS the registry
@@ -108,6 +109,8 @@ memory-core/
   learning/                   study topics: plan, concept notes, progress, exercises
   career/                     profile, job files, tracker, search runs, timeline
   design/                     design taste by layer, ranked palette and type libraries, seed journal
+  devices/                    sync registry — one file per device: follows, plugins, MCP servers
+  device/                     this machine only, never synced: id, sync settings, follows, repo paths
   migrations/                 labelled packages in transit, manifests, ledger — all local
   outputs/                    generated platform prompts
 ```
@@ -172,6 +175,24 @@ a hash recorded at import tells your edits apart from the package's. Timelines m
 export and import is a row in a local, git-ignored `migrations/ledger.md` ("migration log").
 
 See `migrations/README.md` for the file shape and the full re-import table.
+
+## Sync Across Devices
+
+Packages move one piece at a time. To keep the **whole** memory in step across your own laptops,
+say `sync setup`: the memory folder becomes a clone of a **private** GitHub repo you own.
+
+- Core memory (preferences, design, career, notes, plans, brainstorms) always syncs; each
+  project and ecosystem is opt-in per laptop (`follow project X`, `upload project X`)
+- Session start downloads; every save uploads. Logs merge by keeping both sides; anything where
+  both laptops changed the same rule, entry or section is asked, one item at a time
+- Local repo paths live in `device/paths.md` on each machine, never in `General.md`
+- Each device gets a permanent id and a registry file in `devices/`; `sync status` shows every
+  device and which plugins or MCP servers one has that another lacks
+- A new laptop: `python setup.py --sync <private repo URL> [folder]`
+
+Personal context never reaches this framework repo: sync refuses public or framework remotes, a
+pre-push hook re-checks every push, and `tests/test_framework_guard.py` fails if personal files
+ever appear here. `setup.py` marks your install `context` (`.memory-core/kind`) as it personalises it.
 
 ## Two Sources of Truth
 

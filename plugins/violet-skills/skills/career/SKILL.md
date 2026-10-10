@@ -128,6 +128,7 @@ already loaded.
       timeline, and a header written from scratch loses the convention comment. Then append to
       today's `## YYYY-MM-DD` section if it exists; otherwise add a new section **at the end** of
       the file (oldest-first ordering)
+- [ ] **Sync upload**: if `device/sync.md` exists, run the **Upload** in `session-briefing` Step 0s with the label `save career`
 - [ ] **Step 5**: Report the bullets written and the file path
 
 **This mode writes `career/timeline.md` and nothing else.** `tracker.md`, `jobs/*.md` and

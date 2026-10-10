@@ -23,3 +23,6 @@ migrations/manifests/*
 migrations/.staging/
 migrations/ledger.md
 !migrations/*/.gitkeep
+
+# memory-core sync — machine-only
+/device/

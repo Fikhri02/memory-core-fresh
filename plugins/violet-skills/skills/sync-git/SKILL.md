@@ -49,7 +49,7 @@ already loaded.
 ### Step 2: Identify the Project
 
 - [ ] Read the **Repositories** table in each `project-management/*/General.md`
-- [ ] Match on git origin first; fall back to the local path
+- [ ] Match on git origin first; fall back to the local path recorded in `device/paths.md`
 - [ ] If exactly one matches → use it
 - [ ] If several match → list them and ask which
 - [ ] If none match → say: "This repo isn't linked to any project. Add it to a project's

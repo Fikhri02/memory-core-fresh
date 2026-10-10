@@ -40,6 +40,22 @@ When this skill activates, output:
       contains `project-management/`. Otherwise say the memory root cannot be determined and stop
       — never create memory files in whatever repo happens to be open.
 
+- [ ] **Step 0s**: **Sync** — the one place the sync hook is written; the save skills point here.
+      Skip silently when `device/sync.md` does not exist (sync not set up on this device).
+
+      **Download** (here, before Context Load): run
+      `python3 mcp-spike/sync_git.py pull` from the memory root and act on `status`:
+      `up-to-date` / `merged` → continue silently (if `regenerate` is true, run
+      `.venv/bin/python adapters/generate.py all`); `needs-answers` → hand over to `sync-memory`
+      merge questions before the brief; `setup-incomplete` → one line suggesting `sync setup`;
+      `offline` → one line, *"offline — working locally, will upload next save"*; anything else →
+      one line with the reason, then continue.
+
+      **Upload** (run by every save skill after it writes): `python3 mcp-spike/sync_git.py save
+      "<what was saved>"`. `pushed` → silent. `rejected` → run the download above, then save once
+      more. `needs-answers` → the open merge questions come first (`sync-memory`); nothing uploads
+      until they are answered. `offline` → one line. `blocked` → stop and show the reason — never
+      work around it.
 - [ ] **Step 0b**: **Context Load** — this is the one place the full rule is written; the other
       skills point here rather than repeating it.
 

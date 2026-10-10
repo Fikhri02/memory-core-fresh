@@ -68,6 +68,7 @@ memory_root:
     - outputs/
     - career/
     - design/
+    - devices/
 
 # =============================================================================
 # MEMORY FILES
@@ -795,7 +796,7 @@ skills:
         description: >
           Read README and manifest files (pubspec.yaml, package.json, *.csproj,
           pyproject.toml, Cargo.toml, go.mod, pom.xml) to infer description and tech
-          stack; get git origin and absolute local path. If the scan finds nothing
+          stack; get git origin (the local path goes to device/paths.md). If the scan finds nothing
           (the 'new project' path), ask for description, repositories, and tech stack
       - step: 4
         action: confirm
@@ -1035,7 +1036,7 @@ skills:
         action: search
         target: "project-management/*/General.md"
         description: >
-          Match the repo against each Repositories table — origin first, local path as fallback.
+          Match the repo against each Repositories table — origin first, device/paths.md local path as fallback.
           Several matches: ask. No match: report and stop, never scaffold a project
       - step: 3
         action: search
@@ -2102,3 +2103,99 @@ skills:
       - "Journal entries and rescore history are appended, never rewritten"
     level_history:
       1: "Base: layered load stack, apply guardrail, inline capture, seed with contrasting directions and journal, 1–10 rank scorecard, one-time harvest"
+
+  # ---------------------------------------------------------------------------
+  sync-memory:
+    description: >
+      Use when user says 'sync setup', 'sync', 'sync status', 'follow project [X]', 'follow
+      ecosystem [X]', 'unfollow [X]', 'upload project [X]', 'retire device [X]', 'install missing
+      plugins', or 'undo sync'. Keeps one memory-core in step across laptops through a private
+      GitHub repo — core always, projects and ecosystems by choice — and asks one item at a time
+      where both laptops changed the same judgement.
+    tier: on_demand
+    level: 1
+    triggers:
+      explicit:
+        - "sync setup"
+        - "sync status"
+        - "sync"
+        - "undo sync"
+        - "follow project"
+        - "follow ecosystem"
+        - "unfollow"
+        - "upload project"
+        - "upload ecosystem"
+        - "retire device"
+        - "install missing plugins"
+      passive: "session start (download) and after every save (upload), via session-briefing Step 0s"
+    activation_message: "_(sync-memory activates)_"
+    folder_root: "device/"
+    commands:
+      setup:
+        triggers: ["sync setup"]
+        protocol:
+          - step: 1
+            action: ask
+            description: "New private repo (gh repo create --private) or existing URL; GitHub account; device name"
+          - step: 2
+            action: run
+            description: >
+              sync_git.py setup — refused (public, framework or framework-kind remote) stops with the
+              reason; empty-remote → checkboxes of local projects/ecosystems → first-upload;
+              remote-has-content → upload and download checkboxes → first-merge
+          - step: 3
+            action: report
+            description: "Done only when a push succeeds"
+      sync:
+        triggers: ["sync"]
+        protocol:
+          - step: 1
+            action: run
+            description: "pull; needs-answers → merge questions; merged with regenerate → generate.py all"
+          - step: 2
+            action: run
+            description: "save; rejected → pull then save once more"
+      merge:
+        triggers: ["needs-answers from pull"]
+        protocol:
+          - step: 1
+            action: ask
+            description: >
+              One unit at a time, both sides shown: keep mine / take theirs / keep both / edit.
+              Logs never reach here — they merge by union; current-session blocks merge automatically
+          - step: 2
+            action: run
+            description: "resolve with every collected choice; recompute ranked tables when noted; run health"
+      status:
+        triggers: ["sync status"]
+        protocol:
+          - step: 1
+            action: report
+            description: "Ahead/behind, following vs available, local-only items, devices, plugin and MCP differences"
+      follow:
+        triggers: ["follow project", "follow ecosystem", "unfollow", "upload project", "upload ecosystem"]
+        protocol:
+          - step: 1
+            action: run
+            description: "follow / unfollow (confirm; refused while unsaved or unuploaded) / upload"
+      devices:
+        triggers: ["retire device", "install missing plugins"]
+        protocol:
+          - step: 1
+            action: run
+            description: "retire marks a device retired; plugins installs what other active devices have, on yes"
+      undo:
+        triggers: ["undo sync"]
+        protocol:
+          - step: 1
+            action: run
+            description: "Confirm, then reset to the restore point taken before the last sync"
+    rules:
+      - "Never push anywhere but the configured private remote, never change remotes outside setup, never force-push"
+      - "Never answer a merge question for the user"
+      - "Context never goes to the framework repo — refused at setup and blocked by the pre-push hook"
+      - "Setup is only done when a push succeeds"
+      - "undo and unfollow confirm first"
+      - "Offline never blocks a session"
+    level_history:
+      1: "Base: setup with checkboxes, automatic download and upload, unit-level merge questions, follow/unfollow/upload, device registry with plugin and MCP differences, undo, framework guardrail"

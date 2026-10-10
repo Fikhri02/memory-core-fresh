@@ -39,6 +39,7 @@ already loaded.
 - [ ] **Step 3**: Update if the user's profile or the companion's preferences evolved — `main/main-memory.md` *(condition: if_profile_evolved)*
 - [ ] **Step 4**: Trim session history — keep the **3 most recent** session blocks in `main/current-session.md`; move anything older, verbatim, to the top of `main/session-archive.md`
 - [ ] **Step 5**: If project work happened this session, suggest — but do not run — `save project` so the project Timeline gets its own entry. If study on a learning topic happened, likewise suggest `save learning`. If job-search work happened — a search run, a tailored CV, a status change — likewise suggest `save career`
+- [ ] **Sync upload**: if `device/sync.md` exists, run the **Upload** in `session-briefing` Step 0s with the label `save memory`
 - [ ] **Step 6**: Report: 'Memory saved.'
 
 ## Rules

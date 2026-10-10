@@ -156,6 +156,8 @@ _Only when `learning/` exists._
   ```
 - [ ] Write updated file
 
+- [ ] **Sync upload**: if `device/sync.md` exists, run the **Upload** in `session-briefing` Step 0s with the label `save project {name}`
+
 ### Step 7: Confirm
 
 - [ ] Report: "Saved **{project-name}** — timeline updated, {N} file(s) updated."

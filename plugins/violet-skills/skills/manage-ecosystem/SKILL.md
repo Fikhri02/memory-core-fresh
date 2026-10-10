@@ -44,7 +44,7 @@ already loaded.
 - [ ] Ask which projects belong to it. For each, resolve whether it has a
       `project-management/` entry:
   - **Documented** → reference by folder name; `Location` is `→ General.md`
-  - **Not documented** → ask for its local path or git origin, recorded inline
+  - **Not documented** → ask for its git origin, recorded inline; a local path goes to `device/paths.md`, never the map
 - [ ] Ask for a one-line **role** per member — what it *is*, not what it does in detail
 - [ ] Ask for **relations** between members, one line each, direction first
 - [ ] Ask for **shared domains** — anything that spans two or more members. For each, ask whether
