@@ -564,5 +564,104 @@ class Ledger(TempRoot):
         self.assertEqual(5, pkgstate.next_version(self.root, "dep@acme"))
 
 
+class Cli(TempRoot):
+    def run_tool(self, *args, cwd=None):
+        return subprocess.run([sys.executable, str(SCRIPTS / "pkgtool.py"), *map(str, args)],
+                              capture_output=True, text=True, cwd=cwd or self.root)
+
+    def make_package(self, version=1, general="# W\n"):
+        staging = self.root / "staging"
+        write(staging, "project-management/w/General.md", general)
+        write(staging, "project-management/w/Timeline.md", "# T\n\n## 2026-10-01\n- a\n")
+        write(staging, "project-plans/active/w.md", "# Plan\n")
+        spec = self.root / "spec.json"
+        spec.write_text(json.dumps({
+            "header": header(package="w@project", version=version),
+            "header_extra": "",
+            "links": [["project-management/w/Plans/w.md", "project-plans/active/w.md"]]}))
+        out = self.root / f"w@project.v{version}.pkg.md"
+        result = self.run_tool("pack", "--spec", spec, "--staging", staging, "--out", out)
+        self.assertEqual(0, result.returncode, result.stderr)
+        import shutil
+        shutil.rmtree(staging)
+        return out
+
+    def test_validate_reports_and_refuses(self):
+        good = self.make_package()
+        r = self.run_tool("validate", good)
+        self.assertEqual(0, r.returncode)
+        self.assertEqual("package=w@project kind=project audience=self version=1 format=2", r.stdout.strip())
+        bad = write(self.root, "bad.pkg.md", "---\npackage: w@project\nformat: 2\n---\n")
+        r = self.run_tool("validate", bad)
+        self.assertEqual(1, r.returncode)
+        self.assertIn("`kind`", r.stderr)
+
+    def test_pack_refuses_to_overwrite(self):
+        out = self.make_package()
+        staging = self.root / "staging2"
+        write(staging, "project-management/w/General.md", "x\n")
+        spec = self.root / "spec2.json"
+        spec.write_text(json.dumps({"header": header(package="w@project"), "header_extra": "", "links": []}))
+        r = self.run_tool("pack", "--spec", spec, "--staging", staging, "--out", out)
+        self.assertEqual(1, r.returncode)
+        self.assertIn("exists", r.stderr)
+
+    def test_full_import_cycle_then_reimport_is_unchanged(self):
+        pkgfile = self.make_package()
+        dst = self.root / "dst"
+        dst.mkdir()
+        r = self.run_tool("plan", pkgfile, "--root", dst)
+        lines = [l.split("\t") for l in r.stdout.strip().splitlines()]
+        self.assertEqual(["new", "new", "new", "link"], [l[0] for l in lines])
+        targets = [l[1] for l in lines if l[0] == "new"]
+        for t in targets:
+            self.assertEqual(0, self.run_tool("extract", pkgfile, t, "--root", dst).returncode)
+        self.assertEqual("# W\n", (dst / "project-management/w/General.md").read_text())
+        r = self.run_tool("record", "w@project", "--version", 1, "--targets", *targets,
+                          "--root", dst, "--date", "2026-10-10")
+        self.assertEqual(0, r.returncode, r.stderr)
+        r = self.run_tool("plan", pkgfile, "--root", dst)
+        self.assertEqual(["unchanged"] * 3 + ["link"],
+                         [l.split("\t")[0] for l in r.stdout.strip().splitlines()])
+        r = self.run_tool("log", "--dir", "in", "--package", "w@project", "--kind", "project",
+                          "--audience", "self", "--version", 1, "--result", "applied",
+                          "--note", "3 files", "--root", dst, "--date", "2026-10-10")
+        self.assertEqual(0, r.returncode, r.stderr)
+        self.assertIn("| 2026-10-10 | in | w@project |", (dst / "migrations/ledger.md").read_text())
+
+    def test_extract_refuses_unsafe_target(self):
+        pkgfile = self.make_package()
+        r = self.run_tool("extract", pkgfile, "../escape.md", "--root", self.root)
+        self.assertEqual(1, r.returncode)
+        self.assertFalse((self.root.parent / "escape.md").exists())
+
+    def test_merge_timeline_in_place(self):
+        pkgfile = self.make_package()
+        dst = self.root / "dst"
+        write(dst, "project-management/w/Timeline.md", "# T\n\n## 2026-10-05\n- local\n")
+        r = self.run_tool("merge-timeline", pkgfile, "project-management/w/Timeline.md", "--root", dst)
+        self.assertEqual("added 1 section(s)", r.stdout.strip())
+        self.assertIn("## 2026-10-01", (dst / "project-management/w/Timeline.md").read_text())
+
+    def test_strip_scan_sha_and_profile_helpers(self):
+        f = write(self.root, "General.md", GENERAL)
+        r = self.run_tool("strip", f, "--write")
+        self.assertEqual(0, r.returncode)
+        self.assertNotIn("Local Path", f.read_text())
+        self.assertIn("table column `Local Path`", r.stderr)
+        self.assertEqual("", self.run_tool("scan", f).stdout)
+        self.assertRegex(self.run_tool("sha", f).stdout.strip(), r"^[0-9a-f]{8}$")
+        mem = write(self.root, "mm.md", "# V\n\n## Violet Profile\nx\n\n## Jamla Profile\ny\n")
+        r = self.run_tool("profile-headings", mem, "--companion", "Violet")
+        self.assertEqual("companion\tViolet Profile\nuser\tJamla Profile", r.stdout.strip())
+        r = self.run_tool("sha", mem, "--section", "Violet Profile")
+        self.assertEqual(pkgstate.region_sha("## Violet Profile\nx\n"), r.stdout.strip())
+
+    def test_next_version(self):
+        self.make_package()
+        write(self.root, "migrations/out/w@project.v1.pkg.md", "x")
+        self.assertEqual("2", self.run_tool("next-version", "w@project", "--root", self.root).stdout.strip())
+
+
 if __name__ == "__main__":
     unittest.main()
