@@ -700,3 +700,41 @@ GENERAL_WITH_PATH = ("# X\n\n## Repositories\n\n| Name | Local Path | Git Origin
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RamDrift(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "mcp-spike"))
+        import ram
+        self.ram = ram
+
+    def checks(self):
+        return sorted((f.check, f.path) for f in health.ram_drift(self.root))
+
+    def test_clean_layout_is_silent(self):
+        write(self.root, "main/current-session.md", self.ram.POINTER_TEXT)
+        write(self.root, "main/ram/README.md", "# RAM\n")
+        write(self.root, "main/ram/laptop-a.md", self.ram.render_header("laptop-a", "id", "t", "s") + "\nbody\n")
+        self.assertEqual([], self.checks())
+
+    def test_dirty_pointer_and_headerless_ram_are_flagged(self):
+        write(self.root, "main/current-session.md", self.ram.POINTER_TEXT + "\n### 2026-10-11 — stray\n")
+        write(self.root, "main/ram/laptop-b.md", "## Session RAM Status\n")
+        self.assertEqual([("ram_header_missing", "main/ram/laptop-b.md"),
+                          ("ram_pointer_dirty", "main/current-session.md")], self.checks())
+
+    def test_install_without_ram_folder_is_silent(self):
+        self.assertEqual([], self.checks())
+
+    def test_own_ram_outgrowing_its_shape_is_flagged(self):
+        write(self.root, "device/id.md", "id: id-a\nname: laptop-a\n")
+        write(self.root, "main/ram/laptop-a.md", self.ram.render_header("laptop-a", "id", "t", "s")
+              + "\n## Session RAM Status\n**Focus**: x\n**Old project**: superseded paragraph\n")
+        write(self.root, "main/ram/laptop-b.md", self.ram.render_header("laptop-b", "id", "t", "s")
+              + "\n## Session RAM Status\n**Other laptop's mess**: not ours to judge\n")
+        findings = [f for f in health.ram_drift(self.root) if f.check == "ram_shape"]
+        self.assertEqual(["main/ram/laptop-a.md"], [f.path for f in findings])
+        self.assertIn("Old project", findings[0].detail)

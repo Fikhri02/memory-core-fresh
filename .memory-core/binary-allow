@@ -1,0 +1,9 @@
+# Binary files allowed to sync — one glob per line, relative to the memory root.
+#
+# Memory holds text. Sync blocks any NEW binary file (image, PDF, archive, font, office file, or
+# anything with a NUL byte) unless its path matches design/** or a glob below. Binaries already
+# synced may still change. Generated sites and image sets belong in the project's own repo, with a
+# link here; outputs/ never syncs.
+#
+# Example:
+# project-management/*/screenshots/**

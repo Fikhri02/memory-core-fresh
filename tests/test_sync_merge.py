@@ -8,25 +8,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "mcp-spike"))
 
 import sync_merge as mrg  # noqa: E402
 
-SESSION = """# Violet Current Session Memory - RAM
-
-## Session RAM Status
-**Current Session**: {status}
-
-## Session Recap (For AI Restart)
-
-{blocks}### Auto-Reset Behaviour
-rules
-"""
-
-
-def block(date, title, body="- did things"):
-    return f"### {date} — {title}\n\n{body}\n\n"
-
-
-def session(status="x", *blocks):
-    return SESSION.format(status=status, blocks="".join(blocks))
-
 
 class SortLogSections(unittest.TestCase):
     def test_same_date_sections_fold_into_one(self):
@@ -52,58 +33,6 @@ class SortLogSections(unittest.TestCase):
         out = mrg.sort_log_sections(text, level=3)
         self.assertEqual(1, out.count("### 2026-10-09 — x"))
         self.assertIn("more", out)
-
-
-class CurrentSession(unittest.TestCase):
-    def setUp(self):
-        self.old = [block("2026-10-09", "c"), block("2026-10-08", "b"), block("2026-10-07", "a")]
-        self.base = session("x", *self.old)
-
-    def test_new_blocks_from_both_sides_combine_and_cap_archives_verbatim(self):
-        ours = session("x", block("2026-10-11", "ours"), *self.old)
-        theirs = session("x", block("2026-10-11", "theirs"), *self.old)
-        result = mrg.merge_current_session(self.base, ours, theirs)
-        self.assertEqual([], result.conflicts)
-        self.assertIn("### 2026-10-11 — ours", result.text)
-        self.assertIn("### 2026-10-11 — theirs", result.text)
-        self.assertIn("### 2026-10-09 — c", result.text)
-        self.assertNotIn("### 2026-10-08 — b", result.text)
-        self.assertEqual([block("2026-10-08", "b"), block("2026-10-07", "a")], result.archived)
-        self.assertTrue(result.text.endswith("### Auto-Reset Behaviour\nrules\n"))
-
-    def test_block_archived_on_one_side_does_not_come_back(self):
-        ours = session("x", block("2026-10-11", "new"), *self.old[:2])
-        result = mrg.merge_current_session(self.base, ours, self.base)
-        self.assertNotIn("2026-10-07", result.text)
-        self.assertEqual([], result.archived)
-
-    def test_header_changed_on_one_side_is_taken(self):
-        theirs = session("theirs status", *self.old)
-        result = mrg.merge_current_session(self.base, self.base, theirs)
-        self.assertIn("theirs status", result.text)
-        self.assertEqual([], result.conflicts)
-
-    def test_header_changed_on_both_sides_is_a_question_until_chosen(self):
-        ours, theirs = session("mine", *self.old), session("yours", *self.old)
-        self.assertEqual(["header"], mrg.merge_current_session(self.base, ours, theirs).conflicts)
-        chosen = mrg.merge_current_session(self.base, ours, theirs, choices={"header": "theirs"})
-        self.assertEqual([], chosen.conflicts)
-        self.assertIn("yours", chosen.text)
-
-    def test_session_units_expose_the_conflicting_parts(self):
-        ours, theirs = session("mine", *self.old), session("yours", *self.old)
-        unit = mrg.session_units("main/current-session.md", self.base, ours, theirs, ["header"])[0]
-        self.assertIn("mine", unit.ours)
-        self.assertIn("yours", unit.theirs)
-
-
-class Archive(unittest.TestCase):
-    def test_prepend_goes_above_the_first_block(self):
-        archive = "# Session Archive\n\n_intro_\n\n### 2026-10-01 — old\nx\n"
-        out = mrg.prepend_to_archive(archive, [block("2026-10-07", "a")])
-        self.assertLess(out.index("2026-10-07"), out.index("2026-10-01"))
-        self.assertTrue(out.startswith("# Session Archive\n\n_intro_\n\n### 2026-10-07"))
-
 
 
 GENERAL = "# General Design Taste\n\n## Colour\n\n- **Flat**: {flat}\n- **Contrast**: AA always.\n\n## Typography\n\n- **Tabular**: figures line up.\n"

@@ -1,7 +1,6 @@
 """Merge helpers for memory-core sync. Stdlib only.
 
 - sort_log_sections: put a union-merged log back in date order, folding same-heading sections.
-- merge_current_session: three-way merge of main/current-session.md by session block.
 - three_way: three-way merge of a judgement file by unit (rule, entry, row, section).
 """
 
@@ -11,8 +10,6 @@ import re
 from dataclasses import dataclass, field
 
 DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
-SESSION_BLOCK = re.compile(r"^### (\d{4}-\d{2}-\d{2})", re.M)
-ANY_H3 = re.compile(r"^### ", re.M)
 
 
 def _pick(base, ours, theirs):
@@ -96,91 +93,6 @@ def sort_log_sections(text: str, level: int = 2) -> str:
         if extra:
             kept[index[head]] = first.rstrip("\n") + "\n" + "\n".join(extra) + "\n\n"
     return (preamble + "".join(kept)).rstrip("\n") + "\n"
-
-
-@dataclass
-class SessionMerge:
-    text: str
-    archived: list[str]
-    conflicts: list[str]
-
-
-def _session_parts(text: str) -> tuple[str, list[tuple[str, str]], str]:
-    heads = [(m.start(), bool(SESSION_BLOCK.match(text, m.start()))) for m in ANY_H3.finditer(text)]
-    first = next((i for i, (_, dated) in enumerate(heads) if dated), None)
-    if first is None:
-        return text, [], ""
-    end = next((i for i in range(first, len(heads)) if not heads[i][1]), len(heads))
-    suffix_start = heads[end][0] if end < len(heads) else len(text)
-    blocks = []
-    for i in range(first, end):
-        start = heads[i][0]
-        stop = heads[i + 1][0] if i + 1 < len(heads) else len(text)
-        chunk = text[start:min(stop, suffix_start)]
-        blocks.append((chunk.split("\n", 1)[0].rstrip(), chunk.rstrip("\n") + "\n\n"))
-    return text[:heads[first][0]], blocks, text[suffix_start:]
-
-
-def merge_current_session(base: str, ours: str, theirs: str, cap: int = 3,
-                          choices: dict | None = None) -> SessionMerge:
-    choices = choices or {}
-    bp, bb, bs = _session_parts(base)
-    op, ob, osuf = _session_parts(ours)
-    tp, tb, ts = _session_parts(theirs)
-    conflicts: list[str] = []
-
-    def settle(key, b, o, t):
-        value, conflict = _pick(b, o, t)
-        if not conflict:
-            return value
-        chosen = _choose(choices.get(key), o, t)
-        if chosen is None:
-            conflicts.append(key)
-            return o
-        return chosen
-
-    prefix = settle("header", bp, op, tp)
-    suffix = settle("footer", bs, osuf, ts)
-    bmap, omap, tmap = dict(bb), dict(ob), dict(tb)
-    order = [h for h, _ in ob] + [h for h, _ in tb if h not in omap]
-    merged = []
-    for h in order:
-        o, t, b = omap.get(h), tmap.get(h), bmap.get(h)
-        if o is None or t is None:
-            present = o if o is not None else t
-            if b is not None and present == b:
-                continue
-            merged.append((h, present))
-            continue
-        merged.append((h, settle(h, b, o, t)))
-    merged.sort(key=lambda hc: SESSION_BLOCK.match(hc[0]).group(1), reverse=True)
-    keep, extra = merged[:cap], merged[cap:]
-    return SessionMerge(prefix + "".join(chunk for _, chunk in keep) + suffix, [c for _, c in extra], conflicts)
-
-
-def session_units(path: str, base: str, ours: str, theirs: str, keys: list[str]) -> list:
-    parts = [_session_parts(x) for x in (base, ours, theirs)]
-    units = []
-    for key in keys:
-        if key == "header":
-            values = [p[0] for p in parts]
-        elif key == "footer":
-            values = [p[2] for p in parts]
-        else:
-            values = [dict(p[1]).get(key) for p in parts]
-        units.append(Unit(path, key, *values))
-    return units
-
-
-def prepend_to_archive(archive: str, blocks: list[str]) -> str:
-    if not blocks:
-        return archive
-    m = ANY_H3.search(archive)
-    cut = m.start() if m else len(archive)
-    head = archive[:cut]
-    if head and not head.endswith("\n\n"):
-        head = head.rstrip("\n") + "\n\n"
-    return head + "".join(b.rstrip("\n") + "\n\n" for b in blocks) + archive[cut:]
 
 
 @dataclass

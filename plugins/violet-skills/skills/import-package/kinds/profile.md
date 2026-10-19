@@ -16,7 +16,7 @@ Names come from `memory-core.yaml` → `identity.name` (companion) and `identity
 | `main/main-memory.md`, each `## ` section | ✓ | companion sections ✓, user sections → template | `main/main-memory.md#{heading}` |
 | `main/preferences.md` | ✓ | ✓ (names → placeholders) | `main/preferences.md` |
 | `main/projects-context.md` | ✓ | — | same path |
-| `main/current-session.md`, `main/session-archive.md` | ✓ | — | same path |
+| `main/ram/{device}.md` (each laptop's RAM), `main/session-archive.md` | ✓ | — | same path |
 
 Never staged: `main/README.md`, `main-memory-format.md`, `session-format.md`, `session-brief-core.md`
 — they ship with the repo.
@@ -63,7 +63,7 @@ Never staged: `main/README.md`, `main-memory-format.md`, `session-format.md`, `s
   | `new`, `update` | `PKG extract {package} {target}` |
   | `unchanged`, `skip-older` | nothing |
   | `conflict` on a `main-memory.md#…` section | ask keep-local / take-incoming / keep both. take-incoming → `extract`. keep both → append the incoming section's body to the local section under `### Imported {YYYY-MM-DD}` |
-  | `conflict` on `current-session.md` or `session-archive.md` | ask replace-whole / skip. Never merge |
+  | `conflict` on a `main/ram/*.md` file or `session-archive.md` | ask replace-whole / skip. Never merge |
   | `conflict` on `preferences.md`, `projects-context.md` | ask keep-local / take-incoming |
 
   **share** — only `new` targets are written (`extract`, then substitute names). Every `conflict` is

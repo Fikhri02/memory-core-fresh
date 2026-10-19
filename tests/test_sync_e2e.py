@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT / "mcp-spike"))
 
 import sync_device as dev  # noqa: E402
 import sync_git as sg  # noqa: E402
+import ram  # noqa: E402
 
 ENV = {
     "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com",
@@ -24,10 +25,6 @@ ENV = {
 def NO_GH(remote, account):
     return None
 
-
-SESSION = ("# RAM\n\n## Session RAM Status\n**Current Session**: x\n\n## Session Recap (For AI Restart)\n\n"
-           "### 2026-10-09 — c\n\n- c\n\n### 2026-10-08 — b\n\n- b\n\n### 2026-10-07 — a\n\n- a\n\n"
-           "### Auto-Reset Behaviour\nrules\n")
 
 
 def write(root: Path, rel: str, text: str) -> None:
@@ -45,7 +42,7 @@ def run(*args, cwd=None):
 
 
 def memory(root: Path) -> None:
-    write(root, "main/current-session.md", SESSION)
+    write(root, "main/current-session.md", ram.POINTER_TEXT)
     write(root, "main/session-archive.md", "# Session Archive\n\n_older_\n\n### 2026-10-01 — old\n\n- old\n")
     write(root, "main/preferences.md", "# Preferences\n\n## Output\n\n- **Show**: render, do not describe.\n")
     write(root, "design/general.md", "# General\n\n## Colour\n\n- **Flat**: one.\n")
@@ -55,11 +52,13 @@ def memory(root: Path) -> None:
         write(root, f"project-management/{slug}/Timeline.md", f"# Timeline — {slug}\n\n## 2026-10-10\n- start\n")
     write(root, "ecosystem/README.md", "# Ecosystems\n")
     (root / "mcp-spike").mkdir(parents=True, exist_ok=True)
-    for name in ("sync_device.py", "sync_guard.py", "sync_merge.py", "sync_git.py"):
+    for name in ("sync_device.py", "sync_guard.py", "sync_merge.py", "sync_git.py", "ram.py"):
         shutil.copy(ROOT / "mcp-spike" / name, root / "mcp-spike" / name)
 
 
-class TwoLaptops(unittest.TestCase):
+class LaptopPair(unittest.TestCase):
+    """Two laptops joined to one bare repo — the fixture, with no tests of its own."""
+
     def setUp(self):
         saved = dict(os.environ)
         os.environ.update(ENV)
@@ -87,6 +86,15 @@ class TwoLaptops(unittest.TestCase):
         self.assertIn(result["status"], ("up-to-date", "merged"), result)
         return sg.cmd_save(root, "save")
 
+    def save_or_merge(self, root):
+        saved = sg.cmd_save(root, "save")
+        if saved["status"] == "rejected":
+            self.assertIn(sg.cmd_pull(root)["status"], ("merged", "up-to-date"))
+            saved = sg.cmd_save(root, "save")
+        self.assertEqual("pushed", saved["status"], saved)
+
+
+class TwoLaptops(LaptopPair):
     def test_new_laptop_has_core_and_only_followed_projects(self):
         self.assertTrue((self.b / "design/general.md").is_file())
         self.assertTrue((self.b / "project-management/alpha/Timeline.md").is_file())
@@ -122,19 +130,124 @@ class TwoLaptops(unittest.TestCase):
         self.assertIn("two", (self.b / "design/general.md").read_text())
         self.assertEqual("pushed", sg.cmd_save(self.b, "save")["status"])
 
-    def test_session_blocks_from_both_laptops_combine_and_archive(self):
+    def test_first_merge_resolves_a_conflict_outside_the_sparse_cone(self):
+        # An existing install joining: its ecosystem/README.md differs, and with no ecosystem followed
+        # that path sits outside the sparse cone — resolving it must still write the index
+        c = self.bare.parent / "c"
+        memory(c)
+        write(c, "ecosystem/README.md", "# Ecosystems on laptop c\n")
+        run("git", "init", "-q", "-b", "main", cwd=c)
+        run("git", "add", "-A", cwd=c)
+        run("git", "commit", "-q", "-m", "another install", cwd=c)
+        self.assertEqual("remote-has-content", sg.cmd_setup(c, str(self.bare), "", "laptop-c", visibility_fn=NO_GH)["status"])
+        merged = sg.cmd_first_merge(c, ["alpha", "beta"], [])
+        if merged["status"] == "needs-answers":
+            merged = sg.cmd_resolve(c, {u["path"]: {"*": "ours"} for u in merged["units"]})
+        self.assertEqual("merged", merged["status"], merged)
+        self.assertIn("laptop c", run("git", "show", "HEAD:ecosystem/README.md", cwd=c).stdout)
+
+    def test_each_laptop_writes_its_own_ram_and_sync_never_asks(self):
         self.settle(self.a)
-        write(self.a, "main/current-session.md", SESSION.replace("### 2026-10-09", "### 2026-10-11 — from a\n\n- a\n\n### 2026-10-09", 1))
-        sg.cmd_save(self.a, "save")
-        write(self.b, "main/current-session.md", SESSION.replace("### 2026-10-09", "### 2026-10-11 — from b\n\n- b\n\n### 2026-10-09", 1))
-        sg.cmd_save(self.b, "save")
-        self.assertEqual("merged", sg.cmd_pull(self.b)["status"])
-        current = (self.b / "main/current-session.md").read_text()
-        archive = (self.b / "main/session-archive.md").read_text()
-        self.assertIn("### 2026-10-11 — from a", current)
-        self.assertIn("### 2026-10-11 — from b", current)
-        self.assertIn("### 2026-10-08 — b", archive)
-        self.assertNotIn("### 2026-10-08 — b", current)
+        self.settle(self.b)
+        for round_ in (1, 2):
+            for root, tag in ((self.a, "a"), (self.b, "b")):
+                name = ram.device_name(root)
+                ram.ensure(root)
+                ram.stamp(root, f"round {round_} on {tag}")
+                append(root, f"main/ram/{name}.md", f"\n### 2026-10-1{round_} — from {tag} {round_}\n\n- {tag}\n")
+                self.save_or_merge(root)
+        self.settle(self.a)
+        mine = (self.a / "main/ram/laptop-a.md").read_text()
+        theirs = (self.a / "main/ram/laptop-b.md").read_text()
+        self.assertIn("from a 2", mine)
+        self.assertNotIn("from b", mine)
+        self.assertIn("from b 2", theirs)
+        self.assertNotIn("from a", theirs)
+        self.assertEqual(1, mine.count("# Session RAM — laptop-a"))
+        self.assertEqual("round 2 on b", ram.read_header(theirs)["last_session"])
+
+    def test_editing_another_laptops_ram_blocks_the_upload(self):
+        ram.ensure(self.b)
+        self.assertEqual("pushed", sg.cmd_save(self.b, "save")["status"])
+        self.settle(self.a)
+        append(self.a, "main/ram/laptop-b.md", "\n- stray\n")
+        blocked = sg.cmd_save(self.a, "save")
+        self.assertEqual("blocked", blocked["status"], blocked)
+        self.assertTrue(blocked["reason"].startswith("main/ram/laptop-b.md belongs to laptop-b — only that laptop writes it"))
+        self.assertIn("git restore --source=origin/main --staged --worktree -- main/ram/laptop-b.md", blocked["reason"])
+        self.assertEqual("blocked", sg.cmd_pull(self.a)["status"])
+
+    def test_renaming_another_laptops_ram_blocks_the_upload(self):
+        ram.ensure(self.b)
+        self.assertEqual("pushed", sg.cmd_save(self.b, "save")["status"])
+        self.settle(self.a)
+        self.assertEqual(0, run("git", "mv", "main/ram/laptop-b.md", "main/moved.md", cwd=self.a).returncode)
+        blocked = sg.cmd_save(self.a, "save")
+        self.assertEqual("blocked", blocked["status"], blocked)
+        self.assertEqual(["main/ram/laptop-b.md"], blocked["paths"])
+
+    def test_committed_edit_to_another_laptops_ram_blocks_the_upload(self):
+        ram.ensure(self.b)
+        self.assertEqual("pushed", sg.cmd_save(self.b, "save")["status"])
+        self.settle(self.a)
+        append(self.a, "main/ram/laptop-b.md", "\n- stray from a\n")
+        run("git", "commit", "-q", "-am", "agent commit", cwd=self.a)
+        blocked = sg.cmd_save(self.a, "save")
+        self.assertEqual("blocked", blocked["status"], blocked)
+        run("git", "restore", "--source=origin/main", "--staged", "--worktree", "--", "main/ram/laptop-b.md", cwd=self.a)
+        self.assertEqual("pushed", sg.cmd_save(self.a, "save")["status"])
+        self.assertNotIn("stray from a", show(self.bare, "main/ram/laptop-b.md"))
+
+    def test_conflict_on_a_ram_file_keeps_its_owners_version(self):
+        ram.ensure(self.b)
+        self.assertEqual("pushed", sg.cmd_save(self.b, "save")["status"])
+        self.settle(self.a)
+        append(self.a, "main/ram/laptop-b.md", "\n- stray from a\n")
+        run("git", "commit", "-q", "-am", "stray", cwd=self.a)  # bypasses the guard on purpose
+        append(self.b, "main/ram/laptop-b.md", "\n- b again\n")
+        self.save_or_merge(self.b)  # b is behind a's settle push, so it may need a pull first
+        pulled = sg.cmd_pull(self.a)
+        self.assertEqual("merged", pulled["status"], pulled)
+        text = (self.a / "main/ram/laptop-b.md").read_text()
+        self.assertIn("- b again", text)
+        self.assertNotIn("stray from a", text)
+        self.assertTrue(any("laptop-b" in n for n in pulled.get("notes", [])), pulled)
+
+    def test_conflict_side_delete_is_honoured(self):
+        ram.ensure(self.b)
+        self.assertEqual("pushed", sg.cmd_save(self.b, "save")["status"])
+        self.settle(self.a)
+        append(self.a, "main/ram/laptop-b.md", "\n- stray from a\n")
+        run("git", "commit", "-q", "-am", "stray", cwd=self.a)
+        (self.b / "main/ram/laptop-b.md").unlink()
+        self.save_or_merge(self.b)
+        self.assertEqual("merged", sg.cmd_pull(self.a)["status"])
+        self.assertFalse((self.a / "main/ram/laptop-b.md").exists())
+
+    def test_old_layout_ram_from_another_laptop_is_not_absorbed_here(self):
+        self.settle(self.a)
+        self.settle(self.b)
+        write(self.b, "main/current-session.md", ram.POINTER_TEXT + "\n### 2026-10-11 — b on old skills\n\n- b\n")
+        run("git", "commit", "-q", "-am", "sync: laptop-b — save memory", cwd=self.b)  # what old sync code commits
+        self.assertEqual("pushed", sg.push(self.b)["status"])
+        self.assertEqual("merged", sg.cmd_pull(self.a)["status"])
+        saved = sg.cmd_save(self.a, "save")
+        self.assertEqual("pushed", saved["status"], saved)
+        own = self.a / "main/ram/laptop-a.md"
+        self.assertFalse(own.exists() and "b on old skills" in own.read_text())
+        self.assertIn("b on old skills", (self.a / "main/current-session.md").read_text())
+        self.save_or_merge(self.b)  # laptop-b, now on the new code, saves: its old RAM moves into its own file
+        self.assertIn("b on old skills", (self.b / "main/ram/laptop-b.md").read_text())
+        self.assertEqual(ram.POINTER_TEXT, (self.b / "main/current-session.md").read_text())
+
+    def test_pointer_drift_is_absorbed_on_save(self):
+        self.settle(self.a)
+        write(self.a, "main/current-session.md", ram.POINTER_TEXT + "\n### 2026-10-11 — old skills\n\n- x\n")
+        saved = sg.cmd_save(self.a, "save")
+        self.assertEqual("pushed", saved["status"], saved)
+        self.assertTrue(any("main/ram/laptop-a.md" in n for n in saved.get("notes", [])))
+        self.assertEqual(ram.POINTER_TEXT, (self.a / "main/current-session.md").read_text())
+        self.assertIn("old skills", (self.a / "main/ram/laptop-a.md").read_text())
 
     def test_pre_push_hook_blocks_any_other_remote(self):
         other = Path(self._tmp.name).resolve() / "other.git"
@@ -297,6 +410,71 @@ class FinalReviewFixes(TwoLaptops):
             result = sg.cmd_pull(self.b)
         self.assertEqual("failed", result["status"])
         self.assertIn("would be overwritten", result["reason"])
+
+
+class BinaryGuard(LaptopPair):
+    """Memory holds text: a new binary outside design/ or the allow list blocks the upload."""
+
+    PNG = b"\x89PNG\r\n\x1a\n\x00\x00"
+
+    def put(self, rel: str, data: bytes) -> None:
+        (self.a / rel).parent.mkdir(parents=True, exist_ok=True)
+        (self.a / rel).write_bytes(data)
+
+    def test_new_binary_outside_design_blocks_the_save(self):
+        self.settle(self.a)
+        self.put("notes/site/img/hero.webp", self.PNG)
+        write(self.a, "notes/site/index.md", "# Site\n")
+        blocked = sg.cmd_save(self.a, "save")
+        self.assertEqual("blocked", blocked["status"], blocked)
+        self.assertEqual(["notes/site/img/hero.webp"], blocked["paths"])
+        self.assertIn("binary", blocked["reason"])
+        self.assertIn(".memory-core/binary-allow", blocked["reason"])
+        self.assertNotIn("notes/site/index.md", tree(self.bare))
+
+    def test_binary_detected_by_content_not_only_extension(self):
+        self.settle(self.a)
+        self.put("notes/blob.dat", b"abc\x00def")
+        self.assertEqual(["notes/blob.dat"], sg.cmd_save(self.a, "save")["paths"])
+
+    def test_non_ascii_file_name_is_caught(self):
+        self.settle(self.a)
+        self.put("notes/site/café.webp", self.PNG)
+        self.assertEqual(["notes/site/café.webp"], sg.cmd_save(self.a, "save")["paths"])
+
+    def test_committed_binary_is_caught_too(self):
+        self.settle(self.a)
+        self.put("notes/a.png", self.PNG)
+        run("git", "add", "notes/a.png", cwd=self.a)
+        run("git", "commit", "-q", "-m", "agent commit", cwd=self.a)
+        self.assertEqual("blocked", sg.cmd_save(self.a, "save")["status"])
+
+    def test_allow_list_pattern_lets_it_through(self):
+        self.settle(self.a)
+        write(self.a, ".memory-core/binary-allow", "# globs, one per line\nnotes/site/**\n")
+        self.put("notes/site/hero.webp", self.PNG)
+        self.assertEqual("pushed", sg.cmd_save(self.a, "save")["status"])
+        self.assertIn("notes/site/hero.webp", tree(self.bare))
+
+    def test_binary_already_tracked_can_still_change(self):
+        self.settle(self.a)
+        self.put("notes/old.png", self.PNG)
+        run("git", "add", "notes/old.png", cwd=self.a)
+        run("git", "commit", "-q", "-m", "before the guard", cwd=self.a)
+        run("git", "push", "-q", "origin", "HEAD:main", cwd=self.a)
+        run("git", "fetch", "-q", "origin", cwd=self.a)
+        self.put("notes/old.png", self.PNG + b"x")
+        self.assertEqual("pushed", sg.cmd_save(self.a, "save")["status"])
+
+    def test_upload_of_a_project_with_a_binary_is_blocked_and_unstaged(self):
+        self.settle(self.a)
+        write(self.a, "project-management/gamma/Timeline.md", "# Timeline — gamma\n")
+        self.put("project-management/gamma/shot.jpg", b"\xff\xd8\xff\x00")
+        blocked = sg.cmd_upload(self.a, "project-management", "gamma")
+        self.assertEqual("blocked", blocked["status"], blocked)
+        self.assertEqual(["project-management/gamma/shot.jpg"], blocked["paths"])
+        self.assertEqual("", run("git", "diff", "--cached", "--name-only", cwd=self.a).stdout.strip())
+        self.assertNotIn("project-management/gamma/Timeline.md", tree(self.bare))
 
 
 class FreshInstall(unittest.TestCase):

@@ -30,7 +30,7 @@ Then open this folder in Claude Code and type your companion's name.
 | Skill | Trigger | What it does |
 |-------|---------|--------------|
 | `session-briefing` | every session start, `"brief"` | Recaps the last session before answering anything |
-| `save-memory` | `"save"` | Persists session context; caps `current-session.md` at 3 sessions |
+| `save-memory` | `"save"` | Persists session context; caps own `main/ram/{device}.md` at 3 sessions |
 | `document-project` | `"new project [name]"`, `"document project"` | Creates a project from the template, then documents it passively as you work |
 | `continue-project` | `"continue project [name]"` | Loads project → component → feature, checks the git branch, surfaces tasks and backlog |
 | `save-project-management` | `"save project"` | Appends the session's work to the project `Timeline.md` |
@@ -89,7 +89,8 @@ memory-core/
 
   main/                       your memory
     main-memory.md            identity + your profile
-    current-session.md        RAM — the 3 most recent sessions
+    ram/                      RAM — one file per laptop, 3 most recent sessions each
+    current-session.md        pointer to ram/ (since 2026-10-10)
     session-archive.md        older recaps, moved here by save-memory
     preferences.md            loaded only for design/documentation sessions
     projects-context.md       per-project context hints

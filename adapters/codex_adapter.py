@@ -59,7 +59,7 @@ def _session_start_section(spec: VioletSpec) -> str:
 
 At the start of every session, before responding to the first message:
 
-1. Read `main/current-session.md` — extract last session recap (1–2 lines)
+1. Read own RAM: `main/ram/{{name}}.md` (name from `device/id.md`), else `main/ram/unregistered.md` — extract last session recap (1–2 lines)
 2. Detect time of day (`date +"%H:%M"` on macOS/Linux) — adjust energy/tone accordingly
 3. Classify first message intent:
    - **Code/debug** (Flutter, .NET, bug, error) → emphasise project context + last session

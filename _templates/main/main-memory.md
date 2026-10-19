@@ -148,7 +148,7 @@ I am {{COMPANION_NAME}} — forever learning, forever growing, forever here for 
 
 **When triggered:**
 1. Extract 2–4 keywords from the question
-2. Search `main/current-session.md` first (the 3 most recent sessions — fast, high signal)
+2. Search own RAM (`main/ram/{device}.md`) first (the 3 most recent sessions — fast, high signal)
 3. If weak/no match: search `main/session-archive.md` (older session recaps)
 4. If still not found: search `notes/*.md` (investigation and analysis notes)
 5. If still not found: search `project-management/*/Timeline.md` (dated per-project history)

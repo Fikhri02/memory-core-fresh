@@ -79,7 +79,7 @@ class HeaderValidation(unittest.TestCase):
 
     def test_each_kind_accepts_its_own_id(self):
         for kind, pid in (("project", "wikipetia@project"), ("ecosystem", "acme@ecosystem"),
-                          ("feature", "dep@acme"), ("profile", "profile@irfan"),
+                          ("feature", "dep@acme"), ("profile", "profile@me"),
                           ("profile", "profile@shared")):
             h = pkgformat.validate_header(self.fields(kind=kind, package=pid))
             self.assertEqual((kind, pid), (h.kind, h.package))
@@ -191,7 +191,7 @@ class PackStaging(TempRoot):
 
     def test_profile_sections_are_staged_by_hash_name(self):
         write(self.root, "main/main-memory.md#Core Purpose", "## Core Purpose\n\nHelp.\n")
-        text = pkgformat.pack_staging(header(kind="profile", package="profile@irfan"), self.root)
+        text = pkgformat.pack_staging(header(kind="profile", package="profile@me"), self.root)
         _, sections = pkgformat.read_package(text)
         self.assertEqual([("section", "main/main-memory.md#Core Purpose")],
                          [(s.type, s.arg) for s in sections])
@@ -405,10 +405,10 @@ class PathSafety(unittest.TestCase):
 
 class Manifests(TempRoot):
     def test_round_trip_with_awkward_paths(self):
-        m = pkgstate.Manifest("profile@irfan", 2, "2026-10-12",
+        m = pkgstate.Manifest("profile@me", 2, "2026-10-12",
                               {'main/main-memory.md#Terms "of" Address': "1a2b3c4d",
                                "main/preferences.md": "5e6f7a8b"})
-        path = pkgstate.manifest_path(self.root, "profile@irfan")
+        path = pkgstate.manifest_path(self.root, "profile@me")
         pkgstate.write_manifest(path, m)
         self.assertEqual(m, pkgstate.read_manifest(path))
 
@@ -496,7 +496,7 @@ class Plan(TempRoot):
         write(self.root, "main/main-memory.md", "# V\n\n## Core Purpose\nHelp.\n\n## Usage Notes\nOld.\n")
         h, s = pkg([Section("section", "main/main-memory.md#Core Purpose", "## Core Purpose\nHelp.\n"),
                     Section("section", "main/main-memory.md#Time Intelligence", "## Time Intelligence\nT.\n")],
-                   kind="profile", package="profile@irfan")
+                   kind="profile", package="profile@me")
         self.assertEqual(["unchanged", "new"], [i.action for i in pkgstate.plan(self.root, h, s)])
 
 
@@ -801,7 +801,7 @@ class ReviewFixes(TempRoot):
                 pkgstate.plan(self.root, h, s)
 
     def test_share_packages_cannot_carry_personal_files(self):
-        for kind, package, target in (("profile", "profile@shared", "main/current-session.md"),
+        for kind, package, target in (("profile", "profile@shared", "main/ram/laptop-a.md"),
                                       ("profile", "profile@shared", "main/session-archive.md"),
                                       ("profile", "profile@shared", "main/projects-context.md"),
                                       ("project", "w@project", "project-management/w/Timeline.md"),
@@ -809,6 +809,11 @@ class ReviewFixes(TempRoot):
             h, s = pkg([Section("file", target, "x\n")], kind=kind, package=package, audience="share")
             with self.assertRaises(PackageError, msg=target):
                 pkgstate.plan(self.root, h, s)
+
+    def test_self_profile_accepts_device_ram(self):
+        h, s = pkg([Section("file", "main/ram/laptop-a.md", "# Session RAM — laptop-a\n")],
+                   kind="profile", package="profile@me")
+        pkgstate.plan(self.root, h, s)  # must not raise
 
     # 8 — feature targets come from the tool, validated
     def feature_pkg(self, members):

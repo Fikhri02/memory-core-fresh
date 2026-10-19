@@ -18,7 +18,7 @@ import sync_merge  # noqa: E402
 GITKEEPS = {f"{d}/{s}/.gitkeep" for d in ("brainstorming", "project-plans") for s in ("active", "archived", "done")}
 ONLY = {
     "main/": {"main/.gitkeep", "main/README.md", "main/main-memory-format.md", "main/session-brief-core.md",
-              "main/session-format.md"},
+              "main/session-format.md", "main/ram/README.md"},
     "career/": {"career/README.md", "career/_template/"},
     "learning/": {"learning/README.md", "learning/_template/"},
     "project-management/": {"project-management/README.md", "project-management/_template/"},

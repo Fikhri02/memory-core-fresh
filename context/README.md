@@ -64,7 +64,7 @@ Durable facts that should shape how the AI works with you, every session:
 
 ## What does not belong here
 
-- **Session state** — that is `main/current-session.md`, written by `save-memory`
+- **Session state** — that is the laptop's RAM in `main/ram/`, written by `save-memory`
 - **Project detail** — that is `project-management/{name}/`, loaded by `continue-project`
 - **Anything that changes weekly** — a module is read every session, so churn is expensive
 - **Long reference documents** — link to them from a module instead of pasting them in

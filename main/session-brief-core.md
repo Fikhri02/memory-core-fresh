@@ -12,7 +12,7 @@ Read the following files (in parallel if possible):
 
 | File | Purpose | Required |
 |------|---------|----------|
-| `main/current-session.md` | Last session recap | Yes |
+| own RAM (`main/ram/{device}.md`) | Last session recap | Yes |
 | `project-management/*/Timeline.md` | Active project + idle days | Optional |
 | Current time | Time period classification | Optional |
 
@@ -45,7 +45,7 @@ Check project list for projects idle beyond their threshold:
 ```
 📋 Session Brief · [Time Period]
 
-Last session: [1–2 line recap from current-session.md]
+Last session: [1–2 line recap from own RAM (main/ram/{device}.md)]
 Active: [project name] · [status]
 🔴/🟡 [project name] — [N] days idle
 Suggestion: [time-appropriate work type]
@@ -54,7 +54,7 @@ Suggestion: [time-appropriate work type]
 **Composition rules:**
 - Total lines: 12 maximum
 - Omit any line/section that has nothing to report
-- "Last session" is the only mandatory line (requires `current-session.md`)
+- "Last session" is the only mandatory line (requires own RAM, `main/ram/{device}.md`)
 
 ### Step 5: Deliver
 Output the brief before processing the user's first request.
@@ -63,12 +63,12 @@ Output the brief before processing the user's first request.
 
 ## Minimal Version (Standalone — No Companion Systems)
 
-If no companion systems are installed, deliver a minimal brief using only `current-session.md`:
+If no companion systems are installed, deliver a minimal brief using only own RAM (`main/ram/{device}.md`):
 
 ```
 📋 Session Brief
 
-Last session: [recap from current-session.md]
+Last session: [recap from own RAM (main/ram/{device}.md)]
 ```
 
 ---

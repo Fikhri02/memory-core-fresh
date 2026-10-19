@@ -21,11 +21,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import sync_device as dev  # noqa: E402
 import sync_guard as guard  # noqa: E402
 import sync_merge as mrg  # noqa: E402
+import ram  # noqa: E402
 
 BRANCH = "main"
 OPT_IN = ("project-management", "ecosystem")
-CURRENT_SESSION = "main/current-session.md"
-SESSION_ARCHIVE = "main/session-archive.md"
 LOG_FILES = {"project-management/*/Timeline.md": 2, "design/journal.md": 2,
              "career/timeline.md": 2, "main/session-archive.md": 3}
 GITIGNORE_LINES = ["/device/", "/.superpowers/", "/outputs/", "/.venv/", "__pycache__/", "/migrations/in/",
@@ -43,6 +42,11 @@ main/session-archive.md merge=union
 delegate-task/** merge=union
 """
 PENDING = "memory-core-merge.json"
+BINARY_ALLOW = ".memory-core/binary-allow"
+BINARY_ALLOW_DEFAULT = ("design/**",)
+BINARY_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".heic", ".ico", ".bmp", ".tif", ".tiff",
+              ".pdf", ".zip", ".gz", ".tgz", ".7z", ".rar", ".mp3", ".mp4", ".mov", ".wav", ".webm",
+              ".woff", ".woff2", ".ttf", ".otf", ".docx", ".xlsx", ".pptx", ".psd", ".sketch", ".fig"}
 FAILURE = ("error", "refused", "failed", "blocked")
 
 
@@ -418,11 +422,87 @@ def cmd_upload(root: Path, kind: str, slug: str) -> dict:
     dev.write_follow(root, follows)
     apply_sparse(root, follows)
     git(root, "add", "-A", "--", f"{kind}/{slug}")
+    blocked = _binary_guard(root)
+    if blocked:
+        git(root, "reset", "-q", "--", f"{kind}/{slug}")
+        return blocked
     commit(root, f"sync: {dev.ensure_identity(root)['name']} — upload {kind} {slug}")
     return push(root)
 
 
 # ---------------------------------------------------------------- save / pull
+
+def _synced_base(root: Path, committed: bool) -> str:
+    """What a guard diffs the index against: HEAD, or with `committed` the last synced state, so this
+    laptop's unpushed commits are checked too (staged + unpushed, with reverts cancelling out)."""
+    upstream = f"origin/{BRANCH}"
+    if committed and has_ref(root, upstream):
+        return out(root, "merge-base", upstream, "HEAD") or "HEAD"
+    return "HEAD"
+
+
+def binary_allow(root: Path) -> list[str]:
+    path = root / BINARY_ALLOW
+    extra = []
+    if path.is_file():
+        extra = [ln.strip() for ln in path.read_text(encoding="utf-8").splitlines()
+                 if ln.strip() and not ln.lstrip().startswith("#")]
+    return [*BINARY_ALLOW_DEFAULT, *extra]
+
+
+def _is_binary(root: Path, path: str) -> bool:
+    if Path(path).suffix.lower() in BINARY_EXT:
+        return True
+    data = _stage_bytes(root, 0, path)
+    return data is not None and b"\0" in data[:8000]
+
+
+def _binary_guard(root: Path, committed: bool = False) -> dict | None:
+    """Block an upload that adds a binary file outside design/ and the allow list. Run after staging.
+    Binaries already synced may still change — this stops growth, it does not police history."""
+    allow = binary_allow(root)
+    # -z: unquoted paths, so a non-ASCII name like café.png is still seen as a .png
+    fields = git(root, "diff", "--cached", "--name-status", "--no-renames", "-z",
+                 _synced_base(root, committed)).stdout.split("\0")
+    added = [fields[i + 1] for i in range(0, len(fields) - 1, 2) if fields[i] == "A"]
+    bad = sorted(p for p in added
+                 if not any(fnmatch.fnmatch(p, pat) for pat in allow) and _is_binary(root, p))
+    if not bad:
+        return None
+    more = f" (and {len(bad) - 1} more)" if len(bad) > 1 else ""
+    reason = (f"{bad[0]}{more} is a binary file — memory holds text. Move it to the project's own repo "
+              f"and keep a link, or add a glob for it to {BINARY_ALLOW}")
+    return {"status": "blocked", "reason": reason, "paths": bad}
+
+
+def _ram_guard(root: Path, committed: bool = False) -> dict | None:
+    """Block an upload that edits another laptop's RAM (main/ram/{other}.md). Run after stage().
+
+    Checks staged changes (renames split into delete + add), and with `committed` also this laptop's
+    unpushed commits — an agent's own `git commit` must not carry a foreign edit past the guard."""
+    upstream = f"origin/{BRANCH}"
+    changed = {p for p in out(root, "diff", "--cached", "--name-only", "--no-renames",
+                              _synced_base(root, committed)).splitlines() if p}
+    bad = ram.foreign_changes(sorted(changed), ram.device_name(root))
+    if not bad:
+        return None
+    source = upstream if has_ref(root, upstream) else "HEAD"
+    reason = (f"{bad[0]} belongs to {ram.owner(bad[0])} — only that laptop writes it. "
+              f"Undo with: git restore --source={source} --staged --worktree -- {' '.join(bad)}")
+    return {"status": "blocked", "reason": reason, "paths": bad}
+
+
+def _pointer_is_mine(root: Path) -> bool:
+    """Content in the old RAM pointer belongs to this laptop when it was written here: an uncommitted
+    local edit, or last committed by this laptop's own sync. RAM another laptop committed under the old
+    layout is left for that laptop to move."""
+    if git(root, "diff", "--quiet", "HEAD", "--", ram.POINTER, check=False).returncode != 0:
+        return True
+    if not has_ref(root, "HEAD"):
+        return True
+    subject = out(root, "log", "-1", "--no-merges", "--format=%s", "--", ram.POINTER)
+    return not subject or subject.startswith(f"sync: {ram.device_name(root)} — ")
+
 
 def cmd_save(root: Path, label: str) -> dict:
     if not sync_cfg(root).get("remote"):
@@ -430,11 +510,21 @@ def cmd_save(root: Path, label: str) -> dict:
     busy = _busy(root)
     if busy:
         return busy
+    note = None
+    if ram.pointer_dirty(root):
+        note = (ram.absorb_pointer(root) if _pointer_is_mine(root) else
+                f"{ram.POINTER} holds another laptop's RAM in the old layout — left in place; "
+                "it moves into that laptop's own file when it saves with the new skills")
     register(root)
     stage(root)
+    blocked = _ram_guard(root, committed=True) or _binary_guard(root, committed=True)
+    if blocked:
+        return blocked
     committed = commit(root, f"sync: {dev.ensure_identity(root)['name']} — {label}")
     result = push(root)
     result["committed"] = committed
+    if note:
+        result["notes"] = [note]
     return result
 
 
@@ -458,15 +548,16 @@ def _scoped_choices(choices: dict, path: str) -> dict:
 
 
 def _write(root: Path, path: str, text: str | None) -> None:
+    # --sparse: a conflicted path can sit outside the cone (an install joining with its own history)
     target = root / path
     if text is None or text == "":
         if target.exists():
             target.unlink()
-        git(root, "rm", "-q", "--cached", "--ignore-unmatch", "--", path)
+        git(root, "rm", "-q", "--sparse", "--cached", "--ignore-unmatch", "--", path)
         return
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(text, encoding="utf-8")
-    git(root, "add", "--", path)
+    git(root, "add", "--sparse", "--", path)
 
 
 def _log_level(path: str) -> int | None:
@@ -476,12 +567,20 @@ def _log_level(path: str) -> int | None:
     return None
 
 
-def _settle_path(root: Path, path: str, scoped: dict, units: list) -> bool:
+def _settle_path(root: Path, path: str, scoped: dict, units: list, notes: list | None = None) -> bool:
     """Resolve one conflicted path. Returns True when it regenerates generated files."""
     raw = [_stage_bytes(root, n, path) for n in (1, 2, 3)]
+    side = ram.conflict_side(path, ram.device_name(root))
+    if side:
+        keep = raw[1] if side == "ours" else raw[2]
+        _write(root, path, keep.decode("utf-8") if keep is not None else None)
+        if notes is not None:
+            who = "this laptop" if side == "ours" else ram.owner(path)
+            notes.append(f"{path}: kept {who}'s version; the other side is in the backup tag")
+        return False
     if path == "AGENTS.md" or path.startswith("outputs/"):
         git(root, "checkout", "--ours", "--", path)
-        git(root, "add", "--", path)
+        git(root, "add", "--sparse", "--", path)
         return True
     try:
         base, ours, theirs = (_as_text(r) for r in raw)
@@ -489,7 +588,7 @@ def _settle_path(root: Path, path: str, scoped: dict, units: list) -> bool:
         choice = scoped.get("(binary)", scoped.get("*"))
         if choice in ("ours", "theirs") and raw[1] is not None and raw[2] is not None:
             git(root, "checkout", f"--{choice}", "--", path)
-            git(root, "add", "--", path)
+            git(root, "add", "--sparse", "--", path)
         else:
             sizes = [f"binary, {len(r)} bytes" if r is not None else None for r in raw]
             units.append(mrg.Unit(path, "(binary)", *sizes))
@@ -500,17 +599,6 @@ def _settle_path(root: Path, path: str, scoped: dict, units: list) -> bool:
             units.append(mrg.Unit(path, "(deleted)", base, ours, theirs))
         else:
             _write(root, path, picked)
-        return False
-    if path == CURRENT_SESSION:
-        merged = mrg.merge_current_session(base or "", ours, theirs, choices=scoped)
-        if merged.conflicts:
-            units.extend(mrg.session_units(path, base or "", ours, theirs, merged.conflicts))
-            return False
-        _write(root, path, merged.text)
-        if merged.archived:
-            archive = root / SESSION_ARCHIVE
-            current = archive.read_text(encoding="utf-8") if archive.is_file() else "# Session Archive\n\n"
-            _write(root, SESSION_ARCHIVE, mrg.prepend_to_archive(current, merged.archived))
         return False
     result = mrg.three_way(path, base or "", ours, theirs, scoped)
     if result.text is None:
@@ -523,10 +611,11 @@ def _settle_path(root: Path, path: str, scoped: dict, units: list) -> bool:
 def _settle(root: Path, ctx: dict, choices: dict | None = None) -> dict:
     choices = choices or {}
     units: list[mrg.Unit] = []
+    notes: list[str] = []
     regenerate = False
     try:
         for path in [p for p in out(root, "diff", "--name-only", "--diff-filter=U").splitlines() if p]:
-            regenerate |= _settle_path(root, path, _scoped_choices(choices, path), units)
+            regenerate |= _settle_path(root, path, _scoped_choices(choices, path), units, notes)
     except Exception as exc:  # never leave a half-settled merge behind
         git(root, "merge", "--abort", check=False)
         pending = _pending_file(root)
@@ -537,14 +626,14 @@ def _settle(root: Path, ctx: dict, choices: dict | None = None) -> dict:
         payload = {**ctx, "units": [asdict(u) for u in units]}
         _pending_file(root).write_text(json.dumps(payload), encoding="utf-8")
         return {"status": "needs-answers", "units": payload["units"], "backup": ctx["tag"]}
-    return _finish(root, ctx, regenerate)
+    return _finish(root, ctx, regenerate, notes)
 
 
 def _changed(root: Path, a: str, b: str) -> set[str]:
     return {p for p in out(root, "diff", "--name-only", a, b).splitlines() if p}
 
 
-def _finish(root: Path, ctx: dict, regenerate: bool) -> dict:
+def _finish(root: Path, ctx: dict, regenerate: bool, notes: list | None = None) -> dict:
     target = "MERGE_HEAD" if _merging(root) else "HEAD"
     changed = sorted(_changed(root, ctx["before"], target))
     both = _changed(root, ctx["base"], ctx["before"]) & _changed(root, ctx["base"], ctx["theirs"])
@@ -567,7 +656,10 @@ def _finish(root: Path, ctx: dict, regenerate: bool) -> dict:
     apply_sparse(root, dev.read_follow(root))
     if "memory-core.yaml" in changed:
         regenerate = True
-    return {"status": "merged", "changed": changed, "regenerate": regenerate, "backup": ctx["tag"]}
+    result = {"status": "merged", "changed": changed, "regenerate": regenerate, "backup": ctx["tag"]}
+    if notes:
+        result["notes"] = notes
+    return result
 
 
 def cmd_pull(root: Path, allow_unrelated: bool = False) -> dict:
@@ -582,6 +674,9 @@ def cmd_pull(root: Path, allow_unrelated: bool = False) -> dict:
         return busy
     name = dev.ensure_identity(root)["name"]
     stage(root)
+    blocked = _ram_guard(root)
+    if blocked:
+        return blocked
     commit(root, f"sync: {name} — local changes before sync")
     fetch = git(root, *auth_args(cfg), "fetch", "-q", "origin", check=False)
     if fetch.returncode != 0:
