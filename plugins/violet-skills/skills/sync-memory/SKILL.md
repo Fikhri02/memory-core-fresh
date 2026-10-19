@@ -81,7 +81,7 @@ For each unit in `units`, **one at a time**:
 - [ ] Map the answer to `ours` / `theirs` / `both` / `edit:<text>`
 - [ ] For `(structure)` units, say the file's layout changed on both sides and offer a whole-file
       choice with a short diff
-- [ ] For `current-session.md` `header`, show both status blocks; `both` keeps both
+- [ ] RAM never produces merge questions: each laptop's `main/ram/{device}.md` keeps its owner's version. A `notes` entry says when that happened
 - [ ] After the last answer: `resolve '{"<path>": {"<key>": "<choice>"}}'` with every choice
       collected. Never resolve a unit the user did not answer
 - [ ] If more than 10 units share one path, offer a default for the rest of that path (`"*"`)

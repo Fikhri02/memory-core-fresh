@@ -21,8 +21,9 @@ ALLOWED_ROOTS = {
     "feature": ("ecosystem/", "project-management/"),
 }
 PROFILE_FILES = ("main/main-memory.md", "main/preferences.md", "main/projects-context.md",
-                 "main/current-session.md", "main/session-archive.md")
-SHARE_EXCLUDED_FILES = ("main/current-session.md", "main/session-archive.md", "main/projects-context.md")
+                 "main/session-archive.md")
+RAM_FILE = re.compile(r"^main/ram/[a-z0-9][a-z0-9-]*\.md$")
+SHARE_EXCLUDED_FILES = ("main/session-archive.md", "main/projects-context.md")
 # Package paths end up in commands an agent runs, so only plain filename characters are accepted.
 SAFE_SEGMENT = re.compile(r"^[A-Za-z0-9 ._@()&,+-]+$")
 UNSAFE_HEADING = re.compile(r'[\x00-\x1f$`"\\;|<>]')
@@ -92,12 +93,12 @@ def check_target(kind: str, target: str, audience: str = "self") -> None:
     if segments[0] == "project-management" and len(segments) > 1 and segments[1].startswith("_"):
         raise PackageError(f"package may not write infrastructure folder {path!r}")
     if kind == "profile":
-        ok = path in PROFILE_FILES
+        ok = path in PROFILE_FILES or bool(RAM_FILE.match(path))
     else:
         ok = any(path.startswith(r) for r in ALLOWED_ROOTS.get(kind, ()))
     if not ok:
         raise PackageError(f"a {kind} package may not write {path!r}")
-    if audience == "share" and (path in SHARE_EXCLUDED_FILES or segments[-1] == "Timeline.md"
+    if audience == "share" and (path in SHARE_EXCLUDED_FILES or RAM_FILE.match(path) or segments[-1] == "Timeline.md"
                                 or "Feedbacks" in segments[:-1]):
         raise PackageError(f"a share package may not carry {path!r} — it is personal history")
 

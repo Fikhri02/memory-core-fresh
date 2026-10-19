@@ -56,7 +56,7 @@ already loaded.
 
 ### Step 2: Identify Active Project
 
-- [ ] Check `main/current-session.md` for the active project name
+- [ ] Check own RAM (`session-briefing` Step 0a) for the active project name
 - [ ] If unclear or multiple projects were worked on → ask: "Which project should I update the timeline for? [list candidates]"
 
 ### Step 3: Find Timeline File

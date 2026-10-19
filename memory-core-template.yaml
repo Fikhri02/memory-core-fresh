@@ -79,7 +79,7 @@ memory_files:
     - path: main/main-memory.md
       purpose: "Full identity, personality, {{USER_NAME}} profile"
       load: always
-    - path: main/current-session.md
+    - path: main/ram/{device}.md
       purpose: "RAM — session recap, active project, 500-line limit"
       load: always
       line_limit: 500
@@ -136,7 +136,7 @@ context_modules:
 session_start:
   steps:
     - action: read
-      file: main/current-session.md
+      file: main/ram/{device}.md
       extract: session_recap
     - action: detect_time
       command_unix: "date +\"%H:%M\""
@@ -204,7 +204,7 @@ skills:
       'brief', 'session brief', 'what did we do last time', or 'where did we
       left off'. Suppressed when user says 'skip brief'.
     tier: always_active
-    level: 4
+    level: 6
     triggers:
       explicit: ["brief", "session brief", "what did we do last time", "where did we leave off", "reload context"]
       passive: session_start
@@ -222,10 +222,19 @@ skills:
           Context Load — call the context_load tool if the MCP server is connected; otherwise scan
           context/*.md by hand. Either way: every module with load: always in prefix order,
           conditional modules noted but not read, loaded set reported in one line
+      - step: "0g"
+        action: run
+        target: mcp-spike/brief.py
+        description: >
+          Gather in one call — sync download, own RAM (created if missing) with a shape check, live git
+          state of the repos RAM lists, other laptops, learning and career flags. Without Python, run
+          Steps 1-4 by hand
       - step: 1
         action: read
-        target: main/current-session.md
-        description: Extract last session recap (1-2 lines)
+        target: main/ram/{device}.md
+        description: >
+          Extract last session recap (1-2 lines). Repo state is read live from git, never repeated
+          from RAM prose
       - step: 2
         action: detect_time
         description: Determine time period, adjust tone
@@ -249,7 +258,9 @@ skills:
       - deliver_before_request: true
     level_history:
       3: "Context load, recap, time-of-day tone, intent-filtered brief"
-      4: "Current behaviour: learning flags for active topics whose shaky concepts have gone 7+ days without review"
+      4: "Learning flags for active topics whose shaky concepts have gone 7+ days without review"
+      5: "Career flag, fired only by a due follow-up or an unresolved Open: question"
+      6: "Current behaviour: one brief.py call gathers everything; repo state checked live against git; RAM tidy flag"
 
   # ---------------------------------------------------------------------------
   save-memory:
@@ -258,7 +269,7 @@ skills:
       'update memory', or when important information needs to be preserved
       to memory files.
     tier: always_active
-    level: 3
+    level: 4
     triggers:
       explicit: ["save", "save memory", "save progress", "update memory"]
       passive: null
@@ -269,8 +280,8 @@ skills:
         description: "Review conversation for new preferences, decisions, or context worth preserving"
       - step: 2
         action: write
-        target: main/current-session.md
-        description: "Update session recap, active project, what was done"
+        target: main/ram/{device}.md
+        description: "Update session recap and rewrite the Status section: Focus, Repos (path and branch only), Open loops"
       - step: 3
         action: write
         target: main/main-memory.md
@@ -281,12 +292,14 @@ skills:
         description: "Report: 'Memory saved.'"
     rules:
       - "Only update main-memory.md when genuine new knowledge about {{USER_NAME}} or {{COMPANION_NAME}} has emerged"
-      - "current-session.md always updated on save"
-      - "current-session.md is RAM, not a log — at most 3 prior session blocks; older blocks move to main/session-archive.md unchanged"
+      - "own RAM always updated on save"
+      - "RAM is RAM, not a log — at most 3 session blocks and a Status of Focus, Repos and Open loops; ram.py trim moves the rest to main/session-archive.md unchanged, device-tagged"
+      - "RAM never records git state — repo and branch only; the brief reads the rest from git"
       - "Bare 'save' belongs to this skill — it never writes project or learning files; it suggests 'save project' or 'save learning'"
     level_history:
       2: "Session RAM with a 3-session cap and verbatim archive; suggests save project"
-      3: "Current behaviour: also suggests save learning after a study session"
+      3: "Also suggests save learning after a study session"
+      4: "Current behaviour: fixed Status shape rewritten each save; trim moves the rest out; no git state in RAM"
 
   # ---------------------------------------------------------------------------
   manage-project:
@@ -852,7 +865,7 @@ skills:
         description: "Review the conversation for project work — if none, say so and stop"
       - step: 2
         action: check
-        target: main/current-session.md
+        target: main/ram/{device}.md
         description: "Identify the active project; ask if ambiguous or if several were worked on"
       - step: 3
         action: read
@@ -2162,7 +2175,7 @@ skills:
             action: ask
             description: >
               One unit at a time, both sides shown: keep mine / take theirs / keep both / edit.
-              Logs never reach here — they merge by union; current-session blocks merge automatically
+              Logs never reach here — they merge by union; RAM files are per laptop and never merge
           - step: 2
             action: run
             description: "resolve with every collected choice; recompute ranked tables when noted; run health"

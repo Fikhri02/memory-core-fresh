@@ -86,7 +86,7 @@ Unlike Claude Code, Codex does not have a plugin system with automatic skill inj
 2. In the **Instructions** field, paste the contents of `outputs/chatgpt-system-prompt.md`
 3. In the **Knowledge** section, upload:
    - `main/main-memory.md`
-   - `main/current-session.md`
+   - `main/ram/{device}.md`
 4. Save the GPT
 
 ### Option B — API system prompt
@@ -121,7 +121,7 @@ response = client.chat.completions.create(
 1. Open [Google AI Studio](https://aistudio.google.com)
 2. Click **System instructions**
 3. Paste the contents of `outputs/gemini-system-instruction.md`
-4. Upload `main/main-memory.md` and `main/current-session.md` as context files
+4. Upload `main/main-memory.md` and your RAM file from `main/ram/` as context files
 
 ### Option B — API
 
@@ -147,7 +147,7 @@ Use the generic prompt at `outputs/generic-prompt.md`.
 
 1. Paste it into the system prompt / custom instructions field
 2. Attach or paste `main/main-memory.md` as additional context
-3. Attach or paste `main/current-session.md` as additional context
+3. Attach or paste your RAM file from `main/ram/` as additional context
 4. Type `"{{COMPANION_NAME}}"` to start
 
 This works with any LLM that has a system prompt field.
@@ -203,7 +203,7 @@ prompts pick it up.
 | Command | What it does |
 |---------|-------------|
 | `"recall [topic]"` | Search session memory and notes for past sessions on a topic |
-| `"check history"` | Broad search across current-session, session-archive, notes, and project timelines |
+| `"check history"` | Broad search across own RAM, session-archive, notes, and project timelines |
 
 ### Project Management
 
@@ -293,7 +293,7 @@ memory-core/
 
   main/                     ← memory store (edit freely)
     main-memory.md          ← identity and {{USER_NAME}} profile
-    current-session.md      ← session RAM (3 most recent sessions)
+    ram/                    ← session RAM, one file per laptop
     session-archive.md      ← older session recaps, moved out by save-memory
     preferences.md          ← PPTX/design preferences
     projects-context.md     ← project context mapping

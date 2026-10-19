@@ -40,6 +40,21 @@ When this skill activates, output:
       contains `project-management/`. Otherwise say the memory root cannot be determined and stop
       — never create memory files in whatever repo happens to be open.
 
+      **Own RAM.** Session RAM is per laptop: `main/ram/{name}.md`, where `{name}` is `name:` in
+      `device/id.md`, or `main/ram/unregistered.md` when there is no `device/id.md`. Run
+      `python3 mcp-spike/ram.py path` to print it. Every skill uses this rule; none hard-code a RAM path.
+      Each laptop writes only its own RAM file. Never edit another laptop's.
+
+- [ ] **Step 0g**: **Gather — one call (preferred).** From the memory root run
+      `python3 mcp-spike/brief.py --cwd "<the session's working directory>"`. It runs the sync
+      download, creates own RAM if missing, and prints one JSON object with everything Steps 0s, 1,
+      1b, 2 and 4 read: `sync` (the download result), `time`, `ram` (header, Focus, Open loops and a
+      shape `check`), `repos` (live git state), `others`, `learning` and `career`.
+      When it succeeds, act on `sync.status` exactly as Step 0s describes (the download has already
+      run — do not run it again), then take Steps 1, 1b, 2 and the Step 4 flags from its fields
+      instead of reading the files by hand. When Python is unavailable or the script fails, run
+      those steps by hand: they stay the fallback (Rule 4).
+
 - [ ] **Step 0s**: **Sync** — the one place the sync hook is written; the save skills point here.
       Skip silently when `device/sync.md` does not exist (sync not set up on this device).
 
@@ -56,6 +71,14 @@ When this skill activates, output:
       more. `needs-answers` → the open merge questions come first (`sync-memory`); nothing uploads
       until they are answered. `offline` → one line. `blocked` → stop and show the reason — never
       work around it.
+
+      A `blocked` upload naming a `main/ram/` file means another laptop's RAM was edited here. Its
+      reason ends with `Undo with: git restore …`; offer that command and run it only on the user's yes.
+
+      A `blocked` upload naming a **binary file** means a new image, PDF, archive or other non-text
+      file was about to sync outside `design/`. Memory holds text: offer to move the file into the
+      project's own repo (or `outputs/`, which never syncs) and leave a link in its place, or, if the
+      user wants it synced, add a glob for it to `.memory-core/binary-allow`. Never pick for them.
 - [ ] **Step 0b**: **Context Load** — this is the one place the full rule is written; the other
       skills point here rather than repeating it.
 
@@ -72,7 +95,19 @@ When this skill activates, output:
 
       Either way, report the loaded set in one line, resolved against the memory root:
       `Context: git-rules · working-preferences (2 modules)`
-- [ ] **Step 1**: Extract last session recap (1-2 lines) — `main/current-session.md`
+- [ ] **Step 1**: Extract last session recap (1-2 lines) from own RAM (Step 0a). If it does not
+      exist yet, run `python3 mcp-spike/ram.py ensure`
+
+      **Repo state is read live, never from RAM** (Rule 9). Do not repeat what RAM prose says about a
+      repo — clean, uncommitted, merged, a HEAD hash. Report it from `repos`, or on the fallback path
+      run `git -C <path> status -sb` and `git log -1 --oneline` for each repo under RAM's
+      `**Repos**:` and for the working directory. A live branch that differs from the one RAM lists
+      is worth one line. When `ram.check.ok` is false (fallback: `python3 mcp-spike/ram.py check`),
+      add one line before the footer: `🧹 RAM needs tidying — {n} issue(s); the next save trims it`
+- [ ] **Step 1b**: **Other laptops.** Run `python3 mcp-spike/ram.py others` (fallback: read the first 3
+      lines of every other `main/ram/*.md`, skipping devices marked retired in `devices/`). Hold the
+      lines. When a brief is delivered, add them as an "Other laptops" footer, at most 3, newest first.
+      "What was I doing on {device}" loads `main/ram/{device}.md` in full
 - [ ] **Step 2**: Determine time period, adjust tone
 - [ ] **Step 3**: Classify first message intent — code/debug, documentation/design, memory/architecture, or general.
       Now that intent is known, resolve the deferred modules: call `context_load` again with
@@ -100,6 +135,8 @@ When this skill activates, output:
       and must still fire the line,
       or a fresh install that never ran `save career` would go silent on the date it matters
 
+      Then the "Other laptops" footer from Step 1b, when there is one.
+
 ## Rules
 
 1. **Paths are relative to the memory root, not the working directory.** This is the single most
@@ -116,10 +153,16 @@ When this skill activates, output:
 6. `context/README.md` is documentation, not a module — skip it
 7. Never write to `context/` — modules are added and edited deliberately, not generated
 8. `"reload context"` re-runs Step 0b alone — use it after editing a module mid-session; it does not re-deliver the brief
+9. **RAM names a repo and its branch; git says what state it is in.** Anything RAM says about
+   commits, cleanliness or merges was true when written and goes stale the moment work happens
+   elsewhere — check git before saying it
 
 ## Level History
 
 - **Lv.3** — Context load, recap, time-of-day tone, intent-filtered brief
 - **Lv.4** — Adds learning flags for active topics whose shaky concepts have gone 7+ days without review
-- **Lv.5** — Current behaviour: adds a career flag for job-search state, fired only by a due
-  follow-up or an unresolved `Open:` question, never by a standing count of ready applications
+- **Lv.5** — Adds a career flag for job-search state, fired only by a due follow-up or an
+  unresolved `Open:` question, never by a standing count of ready applications
+- **Lv.6** — Current behaviour: one `brief.py` call gathers the sync download, RAM, other laptops,
+  learning and career flags; repo state is checked live against git instead of repeated from RAM;
+  a RAM that has outgrown its shape gets a one-line tidy flag

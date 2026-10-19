@@ -748,6 +748,28 @@ def sync_drift(root: Path, today: date | None = None, now: float | None = None) 
     return out
 
 
+def ram_drift(root: Path) -> list[Finding]:
+    """Device RAM layout: the old pointer must stay empty, every RAM file must carry its device header."""
+    import sys as _sys
+    _sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import ram
+    out: list[Finding] = []
+    pointer = root / ram.POINTER
+    if pointer.is_file() and pointer.read_text(encoding="utf-8").replace(ram.POINTER_TEXT, "", 1).strip():
+        out.append(Finding("ram_pointer_dirty", "medium", ram.POINTER,
+                           "session content was written to the old RAM pointer — the next save moves it into this laptop's RAM"))
+    for f in sorted((root / ram.RAM_DIR).glob("*.md")):
+        rel = f"{ram.RAM_DIR}/{f.name}"
+        if ram.owner(rel) and ram.read_header(f.read_text(encoding="utf-8")) is None:
+            out.append(Finding("ram_header_missing", "low", rel,
+                               "RAM file has no device header — run `python3 mcp-spike/ram.py stamp` on that laptop"))
+    shape = ram.check(root)  # own RAM only — another laptop's shape is that laptop's to fix
+    if not shape["ok"]:
+        out.append(Finding("ram_shape", "low", ram.ram_rel(root),
+                           "; ".join(shape["issues"]) + " — `python3 mcp-spike/ram.py trim` moves the extra out"))
+    return out
+
+
 def run_all(root: Path) -> dict:
     findings: list[Finding] = []
     for check in (
@@ -762,6 +784,7 @@ def run_all(root: Path) -> dict:
         learning_drift,
         design_drift,
         sync_drift,
+        ram_drift,
         complete_features_still_in_development,
         stale_timelines,
     ):

@@ -63,7 +63,7 @@ def _session_start_block(spec: VioletSpec) -> str:
     return dedent(f"""\
 ## Session Start (mandatory — before every first response)
 
-1. **Read** `main/current-session.md` — extract last session recap (1–2 lines)
+1. **Read** own RAM: `main/ram/{{name}}.md` (name from `device/id.md`), else `main/ram/unregistered.md` — extract last session recap (1–2 lines)
 2. **Detect time of day** and adjust tone:
 
 | Period | Hours | Style |

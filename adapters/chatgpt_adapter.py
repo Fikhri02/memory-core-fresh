@@ -46,7 +46,7 @@ def _session_start_block(spec: VioletSpec) -> str:
     )
     return dedent(f"""\
 ## Session Start (every session, before first response)
-1. Read `main/current-session.md` — recap (1-2 lines)
+1. Read own RAM: `main/ram/{{name}}.md` (name from `device/id.md`), else `main/ram/unregistered.md` — recap (1-2 lines)
 2. Detect time ({time_rows})
 3. Classify intent: code/debug → project context | design/doc → load preferences.md | memory/arch → decisions + growth | general → standard
 4. Deliver brief (max 12 lines) then respond

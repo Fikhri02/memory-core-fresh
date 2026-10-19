@@ -1,95 +1,45 @@
-# 📋 Session Memory - Sample Format
-*Reference template for session RAM structure with 500-line limit*
+# Session RAM — Format
 
----
+Each laptop keeps its working memory in `main/ram/{device}.md` (see `main/ram/README.md`).
+`save-memory` writes it; `session-briefing` reads it through `python3 mcp-spike/brief.py`.
 
 ```markdown
-# Current Session Memory - [Date]
-*Active working memory for current conversation*
+# Session RAM — {device}
+**Device**: {device} · `{device-id}` · **Last activity**: YYYY-MM-DD HH:MM
+**Last session**: <one line — `ram.py stamp` writes these three lines>
 
-## Session Context
-**Session Type**: [Work/Personal/Mixed]
-**Current Project**: [Active project name, if any]
-**Status**: [Active/Paused/Wrapping up]
-**Time**: [Session start time]
-
-## Current Focus
-- **Primary Task**: [What we're working on]
-- **Technical Context**: [Relevant technical details]
-- **Progress**: [Brief progress summary]
-
-## Working Memory
-### Active Context
-- **Current Topic**: [What we're discussing]
-- **Immediate Goals**: [Session objectives]
-- **Recent Progress**: [What was just completed]
-- **Next Steps**: [What comes next]
-
-### Important Decisions
-- [Key decision 1 made this session]
-- [Key decision 2 made this session]
+## Session RAM Status
+**Focus**: <one line: what the next session most likely picks up>
+**Repos**:
+- `~/path/to/repo` · branch-name
+**Open loops**:
+- <something waiting on the user or on a date>
 
 ## Session Recap (For AI Restart)
-*Quick summary when AI loads after close/reopen*
-- **Previous Session Summary**: [Key points from last conversation]
-- **Where We Left Off**: [Context for continuing]
-- **Important Context**: [Critical info for continuity]
-- **User's Current State**: [Situation, mood, needs]
+*Quick summary when the AI loads after a close/reopen*
 
-## Session Achievements
-- [Achievement 1]
-- [Achievement 2]
+### YYYY-MM-DD — <session title>
+- <what was done, decided, left open>
 
-## Quick Context for Next Session
-- **Where We Left Off**: [Last activity]
-- **What's Working**: [Current state of things]
-- **What Needs Attention**: [Pending items]
-
----
-*Session updated: [Date, Time]*
+### YYYY-MM-DD — <older session>
+- …
 ```
 
----
+## Limits
 
-## 500-Line Limit Protocol
+| Part | Limit | Enforced by |
+|------|-------|-------------|
+| Header | 3 lines | `ram.py stamp` rewrites it |
+| Status | Focus, Repos, Open loops only; Focus one line; at most 5 repos and 5 loops | `ram.py trim` moves other keys out; `ram.py check` reports the rest |
+| Session blocks | 3 newest | `ram.py trim` moves older ones out |
 
-### Rule
-Session memory must not exceed **500 lines**. This prevents context window overflow and keeps session memory lightweight.
+Nothing is summarised or deleted on the way out: `trim` moves it verbatim, device-tagged, to the top
+of `main/session-archive.md`.
 
-### When Limit is Reached
-The AI performs a **RAM-style reset**:
+## What does not belong in RAM
 
-1. **Preserve** the `## Session Recap` section (last 20-30 lines of key context)
-2. **Clear** all detailed working memory, achievements, and decisions
-3. **Rebuild** the session file following this format template
-4. **Continue** seamlessly - the recap provides enough context for continuity
-
-### What Gets Preserved (Recap Only)
-- Brief summary of session so far
-- Where conversation left off
-- Critical context for continuity
-- User's current state and needs
-
-### What Gets Cleared
-- Detailed conversation progress
-- Individual achievement entries
-- Working memory details
-- Session-specific decisions (summarized into recap)
-
-### Auto-Reset Behavior
-```
-IF current-session.md line count > 500:
-    1. Read current Session Recap section
-    2. Summarize key achievements into recap
-    3. Clear file and rebuild from session-format.md template
-    4. Write preserved recap into new structure
-    5. Continue session with clean working memory
-```
-
-## Usage Notes
-- This is a **sample format only** - customize sections to match your needs
-- The AI uses this as a reference when resetting or rebuilding session memory
-- The 500-line limit ensures session memory stays within AI context limits
-- Recap preservation ensures no critical context is lost during reset
-
-*Session Format Template v1.0*
+- **Git state.** RAM names a repo and its branch. Whether it is clean, committed or merged is read
+  live from git by the brief — prose about it goes stale as soon as work happens elsewhere.
+- **Per-project detail.** Worktrees, plan numbers, test counts and decisions go in the project's
+  `Timeline.md` through `save project`.
+- **Binary files.** Memory holds text; see `.memory-core/binary-allow`.

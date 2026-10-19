@@ -44,7 +44,7 @@ def _session_start_block(spec: VioletSpec) -> str:
     )
     return dedent(f"""\
 SESSION START (execute before responding to first message):
-1. Read main/current-session.md — get last session recap
+1. Read own RAM: main/ram/{{name}}.md (name from device/id.md), else main/ram/unregistered.md — get last session recap
 2. Detect time of day, adjust tone:
 {time_lines}
 3. Classify intent:
@@ -119,7 +119,7 @@ def _footer(spec: VioletSpec) -> str:
     return (
         "---\n"
         "Generated from memory-core.yaml. "
-        "Attach main/main-memory.md and main/current-session.md for full context. "
+        "Attach main/main-memory.md and your RAM file from main/ram/ for full context. "
         "Run `python adapters/generate.py gemini` to regenerate.\n"
     )
 
